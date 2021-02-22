@@ -7,6 +7,7 @@ from tsx.models.forecaster import Shallow_FCN, Shallow_CNN_RNN
 from tsx.datasets.ucr import load_itapowdem
 from tsx.visualizations import plot_cam
 from tsx.metrics import smape
+from tsx.utils import to_numpy
 import matplotlib.pyplot as plt 
 
 # TODO: Preprocessing
@@ -16,7 +17,6 @@ A, _ = ds.torch(train=True)
 B, _ = ds.torch(train=False)
 
 X = torch.cat((A, B), dim=0)
-
 
 def split_timeseries_percent(X, percentages):
     total_length = len(X)
@@ -54,6 +54,23 @@ def compare_logs(log_a, log_b, mse_baseline=None, smape_baseline=None):
 
     plt.show()
 
+def rank_models(pred_a, pred_b, x, y):
+    # TODO: Assumes two models for now, make this more general
+    y = to_numpy(y)
+
+    rel_err_a = np.abs(np.squeeze(y) - np.squeeze(pred_a))
+    rel_err_b = np.abs(np.squeeze(y) - np.squeeze(pred_b))
+
+    ranking = [1 if err_a <= err_b else 0 for (err_a, err_b) in zip(rel_err_a, rel_err_b)]
+    return np.array(ranking)
+
+def get_gradcam(models, preds, x, y):
+    cams = []
+    for i, m in enumerate(models):
+        attr = Grad_CAM(x, preds[i], m)
+        cams.append(attr)
+
+    return cams
 
 intervals_percent = [.7, .2, .1]
 x_train, x_val, x_test = split_timeseries_percent(X, intervals_percent)
@@ -66,32 +83,29 @@ x_train = x_train[..., :-1]
 x_val = x_val[..., :-1]
 x_test = x_test[..., :-1]
 
-epochs = 50
+epochs = 5
 
+# TODO: Store model
 model_a = Shallow_CNN_RNN(batch_size=20, epochs=epochs, hidden_states=30)
 model_b = Shallow_FCN(batch_size=20, epochs=epochs)
 
 logs_a = model_a.fit(x_train, y_train, X_val=x_val, y_val=y_val)
 logs_b = model_b.fit(x_train, y_train, X_val=x_val, y_val=y_val)
 
+preds_a = model_a.predict(x_val)
+preds_b = model_b.predict(x_val)
+
 baseline_prediction = x_val[..., -1]
 smape_baseline = smape(baseline_prediction, y_val)
 mse_bseline = torch.nn.MSELoss()(baseline_prediction, y_val)
 
-print(logs_a)
+# Visualize train results
+#compare_logs(logs_a, logs_b, smape_baseline=smape_baseline, mse_baseline=mse_bseline)
 
-compare_logs(logs_a, logs_b, smape_baseline=smape_baseline, mse_baseline=mse_bseline)
+# binary vector (one if model_a is better, zero otherwise)
+ranking = rank_models(preds_a, preds_b, x_val, y_val)
+gradcams = get_gradcam([model_a, model_b], [preds_a, preds_b], x_val, y_val)
 
-# loss_fn = nn.MSELoss()
-# test_preds = torch.from_numpy(model.predict(x_test))
-# print(loss_fn(test_preds, y_test.squeeze()))
-
-# model = TimeSeries1DNet(n_classes=2, epochs=20)
-# model.fit(x_train, y_train, X_test=x_test, y_test=y_test)
-
-# example_x = x_test[10:13]
-# example_prediction = model.predict(example_x)
-
-# attr = Grad_CAM(example_x, example_prediction, model)
-
-# plot_cam(example_x, attr)
+# Example Visualizations
+#plot_cam(x_val[10:13], gradcams[0][10:13], title="Shallow_CNN_RNN")
+#plot_cam(x_val[10:13], gradcams[1][10:13], title="Shallow_FCN")
