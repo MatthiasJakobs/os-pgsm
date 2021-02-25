@@ -2,3 +2,4 @@ tsx
 launch.json
 .vscode
 test.py
+*.pyc
