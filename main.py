@@ -170,42 +170,8 @@ def split_array_at_zero(arr):
             i = stop
         else:
             i += 1
-        # if t < len(indices) and indices[t] - indices[f] == 1:
-        #     t += 1
-
-        # if t != f:
-        #     splits.append((f, t))
-
-        # f = t
-        # t += 1
-
-    # for i in range(len(indices)):
-    #     start = indices[i]
-    #     current = start
-    #     for j in range(i+1, len(indices)):
-    #         if indices[j] - current == 1:
-    #             current = indices[j]
-    #         else:
-    #             break
-    #     if start != current:
-    #         splits.append((start, current))
-
-    #     if current == indices[-1]:
-    #         break
 
     return splits
-
-    # if len(indices) == 1 :
-    #     return splits
-    # for subarray in np.split(arr, indices):
-    #     if len(subarray) < 2:
-    #         continue
-    #     if subarray[0] == 0:
-    #         subarray = subarray[1:]
-    #     if len(subarray) > 1:
-    #         splits.append(subarray)
-
-    # return splits
 
 # Idea: Smooth out region of competence
 #       - If a single point is surrounded by points below threshold, it will be deleted aswell (denoising)
@@ -230,28 +196,35 @@ def get_rocs(methods, xs, threshold=.5):
 
     return rocs
 
-def evaluate_test(model, x_test, lags=5):
+def evaluate_test(model, x_test, reuse_predictions=False, lags=5):
     predictions = np.zeros_like(x_test)
 
     x = x_test[:lag]
     predictions[:lag] = x
 
     for x_i in range(lag, len(x_test)):
-        x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        if reuse_predictions:
+            x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        else:
+            x = x_test[x_i-lag:x_i].unsqueeze(0)
+
         predictions[x_i] = np.squeeze(model.predict(x.unsqueeze(0)))
         
     error = smape(x_test.numpy(), predictions)
     return predictions, error
 
 
-def online_forecasting(rocs, models, X, lag=5, dist=dtw):
+def online_forecasting(rocs, models, X, reuse_prediction=False, lag=5, dist=dtw):
     predictions = np.zeros_like(X)
 
     x = X[:lag]
     predictions[:lag] = x
 
     for x_i in trange(lag, len(X)):
-        x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        if reuse_prediction:
+            x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        else:
+            x = X[x_i-lag:x_i].unsqueeze(0)
 
         best_model = -1
         best_indice = None
@@ -314,6 +287,17 @@ def evaluate_model_on_val(models, x_val, lags=5):
 
     return preds, cs, ls
 
+def plot_test_preds(preds, labels, scores, x_test, first_n=30):
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_test[:first_n], color="black", label="x_test")
+    colors = ["red", "green", "blue", "orange", "purple"]
+    for i, p in enumerate(preds):
+        plt.plot(preds[i][:first_n], color=colors[i], label="{}: {:.5} sMAPE".format(labels[i], scores[i]))
+
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig("plots/test_evaluation.pdf")
+
 # TODO: Support preprocessing from sklearn as paramters
 X = Jena_Climate().torch()
 
@@ -321,10 +305,10 @@ X = Jena_Climate().torch()
 lag = 5
 [x_train, x_val], [y_train, y_val], x_test = windowing(X, train_input_width=lag, val_input_width=5*lag, use_torch=True)
 
-epochs = 280
+epochs = 100
 batch_size = 300
 # TODO: Store model
-model_a = Shallow_CNN_RNN(batch_size=batch_size, epochs=epochs, transformed_ts_length=x_train.shape[-1], hidden_states=100)
+model_a = Shallow_CNN_RNN(batch_size=batch_size, epochs=5*epochs, transformed_ts_length=x_train.shape[-1], hidden_states=100)
 model_b = Shallow_FCN(batch_size=batch_size, ts_length=x_train.shape[-1], epochs=epochs)
 
 logs_a = model_a.fit(x_train, y_train)
@@ -334,23 +318,24 @@ logs_b = model_b.fit(x_train, y_train)
 
 rankings = (losses_a > losses_b).astype(np.int)
 
-#x_val_split = split_up_dataset(x_val)
-
 better_a_inds = np.where(np.logical_not(rankings))
 better_b_inds = np.where(rankings)
 better_a = cams_a[better_a_inds]
 better_b = cams_b[better_b_inds]
 
-#val_rocs = get_rocs([better_a, better_b], [x_val_split[better_a_inds], x_val_split[better_b_inds]])
+print("RNN_better {} CNN_better {}".format(np.sum(better_a_inds), np.sum(better_b_inds)))
+
 val_rocs = get_rocs([better_a, better_b], [x_val[better_a_inds], x_val[better_b_inds]])
 
-preds_a, smape_a = evaluate_test(model_a, x_test, lags=5)
-preds_b, smape_b = evaluate_test(model_b, x_test, lags=5)
+preds_a, smape_a = evaluate_test(model_a, x_test, lags=lag, reuse_predictions=False)
+preds_b, smape_b = evaluate_test(model_b, x_test, lags=lag, reuse_predictions=False)
 preds_o, smape_o = online_forecasting(val_rocs, [model_a, model_b], x_test)
 
 print(smape_a)
 print(smape_b)
 print(smape_o)
+
+#plot_test_preds([preds_a, preds_b, preds_o], ['rnn', 'cnn', 'mix'], [100*smape_a, 100*smape_b, 100*smape_o], x_test, first_n=200)
 
 #plot_cam(x_val[first_3_cnn], val_rocs[0][:3], title="CNN on validation", save_to="plots/cnn_rocs.pdf")
 #plot_cam(x_val[first_3_rnn], val_rocs[1][:3], title="RNN on validation", save_to="plots/rnn_rocs.pdf")
