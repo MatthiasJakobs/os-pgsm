@@ -13,7 +13,34 @@ from wheatprice import WheatPrice
 from jena_climate import Jena_Climate
 from ranker import Ranker
 from tsx.distances import dtw
-from tqdm import tqdm
+from tqdm import tqdm, trange
+
+def split_up_dataset(x, lag=5):
+    splits = []
+    if len(x.shape) == 1:
+        if isinstance(x, torch.Tensor):
+            splits.append(x[:lag].unsqueeze(0))
+        if isinstance(x, np.ndarray):
+            splits.append(np.expand_dims(x[:lag], 0))
+        for i in range(1, len(x)-lag+1):
+            slic = x[i:(i+lag)]
+            if len(slic.shape) == 1:
+                if isinstance(slic, torch.Tensor):
+                    slic = slic.unsqueeze(0)
+                if isinstance(slic, np.ndarray):
+                    slic = np.expand_dims(slic, 0)
+            splits.append(slic)
+    if len(x.shape) == 2:
+        # Take shapes (n, m) to (k, 5)
+        for x_i in x:
+            s = split_up_dataset(x_i, lag=lag)
+            splits.append(s)
+
+    if isinstance(splits[0], np.ndarray):
+        return np.concatenate(splits, axis=0)
+    if isinstance(splits[0], torch.Tensor):
+        return torch.cat(splits, dim=0)
+
 
 def split_timeseries_percent(X, percentages):
     total_length = len(X)
@@ -26,28 +53,55 @@ def split_timeseries_percent(X, percentages):
 
     return splits
 
-def windowing(X, input_width=3, offset=0, label_width=1, split_percentages=(0.7, 0.2, 0.1)):
-    nr_output_samples = int(np.floor(len(X) / (input_width + label_width + offset)))
+def windowing(X, train_input_width=3, val_input_width=9, offset=0, label_width=1, use_torch=True, split_percentages=(0.4, 0.55, 0.05)):
 
-    x_w = []
-    y_w = []
+    def _apply_window(x, input_width):
+        x_w = []
+        y_w = []
 
-    for i in range(0, len(X), (input_width+offset+label_width)):
-        x_w.append(np.expand_dims(X[i:(i+input_width)], 0))
-        y_w.append(np.expand_dims(X[(i+input_width+offset):(i+input_width+offset+label_width)], 0))
+        for i in range(0, len(x), (input_width+offset+label_width)):
+            x_w.append(np.expand_dims(x[i:(i+input_width)], 0))
+            y_w.append(np.expand_dims(x[(i+input_width+offset):(i+input_width+offset+label_width)], 0))
 
-    if x_w[-1].shape != x_w[0].shape:
-        x_w = x_w[:-1]
-        y_w = y_w[:-1]
+        if x_w[-1].shape != x_w[0].shape:
+            x_w = x_w[:-1]
+            y_w = y_w[:-1]
 
-    if y_w[-1].shape[-1] == 0:
-        x_w = x_w[:-1]
-        y_w = y_w[:-1]
+        if y_w[-1].shape[-1] == 0:
+            x_w = x_w[:-1]
+            y_w = y_w[:-1]
 
-    x_w = np.concatenate(x_w, axis=0)
-    y_w = np.concatenate(y_w, axis=0)
+        x_w = np.concatenate(x_w, axis=0)
+        y_w = np.concatenate(y_w, axis=0)
 
-    return split_timeseries_percent(x_w, split_percentages), split_timeseries_percent(y_w, split_percentages)
+        if use_torch:
+            x_w = torch.from_numpy(x_w).float().unsqueeze(1)
+            y_w = torch.from_numpy(y_w).float()
+
+        return x_w, y_w
+
+    X_train = X[0:int(split_percentages[0] * len(X))]
+    X_val = X[len(X_train):len(X_train)+int(split_percentages[1] * len(X))]
+    X_test = X[(len(X_train) + len(X_val)):(len(X_val) + len(X_train))+int(split_percentages[1] * len(X))]
+
+    x_train, y_train = _apply_window(X_train, train_input_width)
+    #x_val, y_val = _apply_window(X_val, val_input_width)
+
+    x_val = []
+    y_val = None # TODO
+
+    for i in range(0, len(X_val), val_input_width):
+        x_val.append(X_val[i:(i+val_input_width)].unsqueeze(0))
+
+    x_val = torch.cat(x_val[:-1], 0)
+
+    if use_torch and isinstance(X_test, np.ndarray):
+        X_test = torch.from_numpy(X_test).unsqueeze(1).float()
+    if use_torch and isinstance(x_val, np.ndarray):
+        x_val = torch.from_numpy(x_val).unsqueeze(1).float()
+
+    return [x_train, x_val], [y_train, y_val], X_test
+
 
 def compare_logs(log_a, log_b, mse_baseline=None, mae_baseline=None, smape_baseline=None):
 
@@ -84,7 +138,7 @@ def rank_models(model_predictions, y, dist=smape):
     errors = np.zeros((len(model_predictions), len(y)))
 
     for i, pred in enumerate(model_predictions):
-        errors[i] = dist(y, pred.reshape(-1, 1), axis=1)
+        errors[i] = dist(y, pred, axis=1)
     
     return np.argsort(-errors, axis=0)
 
@@ -96,41 +150,108 @@ def get_gradcam(models, preds, x, y):
 
     return cams
 
-# TODO: This is normalized, i.e., think about this threshold more?
+def split_array_at_zero(arr):
+    indices = np.where(arr != 0)[0]
+    splits = []
+    i = 0
+    while i+1 < len(indices):
+        start = i
+        stop = start
+        j = i+1
+        while j < len(indices):
+            if indices[j] - indices[stop] == 1:
+                stop = j
+                j += 1
+            else:
+                break
+
+        if start != stop:
+            splits.append((indices[start], indices[stop]))
+            i = stop
+        else:
+            i += 1
+        # if t < len(indices) and indices[t] - indices[f] == 1:
+        #     t += 1
+
+        # if t != f:
+        #     splits.append((f, t))
+
+        # f = t
+        # t += 1
+
+    # for i in range(len(indices)):
+    #     start = indices[i]
+    #     current = start
+    #     for j in range(i+1, len(indices)):
+    #         if indices[j] - current == 1:
+    #             current = indices[j]
+    #         else:
+    #             break
+    #     if start != current:
+    #         splits.append((start, current))
+
+    #     if current == indices[-1]:
+    #         break
+
+    return splits
+
+    # if len(indices) == 1 :
+    #     return splits
+    # for subarray in np.split(arr, indices):
+    #     if len(subarray) < 2:
+    #         continue
+    #     if subarray[0] == 0:
+    #         subarray = subarray[1:]
+    #     if len(subarray) > 1:
+    #         splits.append(subarray)
+
+    # return splits
+
 # Idea: Smooth out region of competence
 #       - If a single point is surrounded by points below threshold, it will be deleted aswell (denoising)
-def get_rocs(rankings, predictions, models, validation_data, validation_label):
+#def get_rocs(rankings, predictions, models, validation_data, validation_label):
+def get_rocs(methods, xs, threshold=.5):
 
     rocs = []
+    for m, x_val in zip(methods, xs):
+        rocs_i = []
+        for region, x in zip(m, x_val):
+            max_r = np.max(region) 
+            normalized = region / max_r
+            after_threshold = normalized * (normalized > threshold)
 
-    for i, m in enumerate(models):
+            if len(np.nonzero(after_threshold)[0]) > 0:
+                indidces = split_array_at_zero(after_threshold)
+                for (f, t) in indidces:
+                    rocs_i.append(x[f:(t+1)])
+                #rocs_i.extend(split_array_at_zero(after_threshold)) # TODO: Do not return the ROC as gradcam but use gradcam to finetune the ROC
 
-        # region of competence shape: (nr_of_best, length_of_explanation)
-        is_best = rankings[i]
-        model_roc = np.zeros((np.sum(is_best), 3)) # TODO: This needs to be more generic
-
-        for x_i in range(model_roc.shape[0]):
-            m.reset_gradients() 
-            out = m.forward(validation_data[np.where(is_best)][x_i].unsqueeze(0), return_intermediate=True)
-            feats = out['feats']
-            logits = out['logits']
-
-            grads = torch.autograd.grad(smape(logits, validation_label[np.where(is_best)][x_i]), feats)[0].squeeze()
-
-            a = grads.detach()
-            A = feats.detach()
-
-            r = torch.sum(torch.nn.functional.relu(a * A), axis=1).numpy()
-            model_roc[x_i] = r / np.max(r)
-
-        rocs.append(model_roc)
+        rocs.append(rocs_i)
 
     return rocs
 
-def online_forecasting(rocs, models, X, dist=dtw):
-    predictions = []
+def evaluate_test(model, x_test, lags=5):
+    predictions = np.zeros_like(x_test)
 
-    for x in tqdm(X):
+    x = x_test[:lag]
+    predictions[:lag] = x
+
+    for x_i in range(lag, len(x_test)):
+        x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        predictions[x_i] = np.squeeze(model.predict(x.unsqueeze(0)))
+        
+    error = smape(x_test.numpy(), predictions)
+    return predictions, error
+
+
+def online_forecasting(rocs, models, X, lag=5, dist=dtw):
+    predictions = np.zeros_like(X)
+
+    x = X[:lag]
+    predictions[:lag] = x
+
+    for x_i in trange(lag, len(X)):
+        x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
 
         best_model = -1
         best_indice = None
@@ -145,52 +266,107 @@ def online_forecasting(rocs, models, X, dist=dtw):
                     best_model = i
                     smallest_distance = distance
 
-        predictions.append(models[best_model].predict(x.unsqueeze(0)))
+        predictions[x_i] = models[best_model].predict(x.unsqueeze(0))
 
-    return np.array(predictions)
-    
+    error = smape(predictions, X.numpy())
 
+    return np.array(predictions), error
 
+def evaluate_model_on_val(models, x_val, lags=5):
+    preds = []
+    cs = []
+    ls = []
+    for m in models:
+        predictions = np.squeeze(np.zeros_like(x_val))
+        cams = np.squeeze(np.zeros_like(x_val))
+        losses = np.zeros(len(x_val))
+        for o, x in enumerate(x_val):
+            prediction = np.squeeze(np.zeros_like(x))
+            cam = np.squeeze(np.zeros_like(x))
+            prediction[0:lags] = x[..., 0:lags]
+            total_loss = 0
+            for i in range(len(prediction)-lags):
+                to = i + lags
+                p_index = to
+                sliced = x[..., i:to]
+                res = m.forward(sliced.unsqueeze(0).unsqueeze(0), return_intermediate=True)
+                logits = res['logits']
+                feats = res['feats']
+                pred_smape = smape(logits, x[..., to])
+                total_loss += pred_smape.detach().squeeze().item()
+                grads = torch.autograd.grad(pred_smape, feats)[0].squeeze()
+                prediction[p_index] = logits.detach().squeeze().numpy()
+
+                a = grads.detach()
+                A = feats.detach()
+
+                r = torch.sum(torch.nn.functional.relu(a * A), axis=1).squeeze().numpy()
+
+                cam[i:to] = r
+
+            predictions[o] = prediction
+            cams[o] = cam
+            losses[o] = total_loss
+
+        preds.append(predictions)
+        cs.append(cams)
+        ls.append(losses)
+
+    return preds, cs, ls
 
 # TODO: Support preprocessing from sklearn as paramters
 X = Jena_Climate().torch()
 
-[x_train, x_val, x_test], [y_train, y_val, y_test] = windowing(X, input_width=3)
-x_train = torch.from_numpy(x_train).unsqueeze(1).float()
-x_val = torch.from_numpy(x_val).unsqueeze(1).float()
-x_test = torch.from_numpy(x_test).unsqueeze(1).float()
-y_train = torch.from_numpy(y_train).float()
-y_val = torch.from_numpy(y_val).float()
-y_test = torch.from_numpy(y_test).float()
+# TODO
+lag = 5
+[x_train, x_val], [y_train, y_val], x_test = windowing(X, train_input_width=lag, val_input_width=5*lag, use_torch=True)
 
-epochs = 70
+epochs = 280
 batch_size = 300
 # TODO: Store model
 model_a = Shallow_CNN_RNN(batch_size=batch_size, epochs=epochs, transformed_ts_length=x_train.shape[-1], hidden_states=100)
 model_b = Shallow_FCN(batch_size=batch_size, ts_length=x_train.shape[-1], epochs=epochs)
 
-logs_a = model_a.fit(x_train, y_train, X_val=x_val, y_val=y_val)
-logs_b = model_b.fit(x_train, y_train, X_val=x_val, y_val=y_val)
+logs_a = model_a.fit(x_train, y_train)
+logs_b = model_b.fit(x_train, y_train)
 
-preds_a = model_a.predict(x_val)
-preds_b = model_b.predict(x_val)
+[preds_a, preds_b], [cams_a, cams_b], [losses_a, losses_b] = evaluate_model_on_val([model_a, model_b], x_val)
 
-rankings = rank_models([preds_a, preds_b], y_val)
+rankings = (losses_a > losses_b).astype(np.int)
 
-val_rocs = get_rocs(rankings, [preds_a, preds_b], [model_a, model_b], x_val, y_val)
+#x_val_split = split_up_dataset(x_val)
+
+better_a_inds = np.where(np.logical_not(rankings))
+better_b_inds = np.where(rankings)
+better_a = cams_a[better_a_inds]
+better_b = cams_b[better_b_inds]
+
+#val_rocs = get_rocs([better_a, better_b], [x_val_split[better_a_inds], x_val_split[better_b_inds]])
+val_rocs = get_rocs([better_a, better_b], [x_val[better_a_inds], x_val[better_b_inds]])
+
+preds_a, smape_a = evaluate_test(model_a, x_test, lags=5)
+preds_b, smape_b = evaluate_test(model_b, x_test, lags=5)
+preds_o, smape_o = online_forecasting(val_rocs, [model_a, model_b], x_test)
+
+print(smape_a)
+print(smape_b)
+print(smape_o)
+
+#plot_cam(x_val[first_3_cnn], val_rocs[0][:3], title="CNN on validation", save_to="plots/cnn_rocs.pdf")
+#plot_cam(x_val[first_3_rnn], val_rocs[1][:3], title="RNN on validation", save_to="plots/rnn_rocs.pdf")
 
 ###################
 # Test models
 ##
 # First baseline: Just choose the first model everytime
-print("Just using model 1: {}".format(smape(y_test.squeeze().numpy(), model_a.predict(x_test))))
+#print("Just using model 1: {}".format(smape(y_test.squeeze().numpy(), model_a.predict(x_test))))
 # Second baseline: Just choose the second model everytime
-print("Just using model 2: {}".format(smape(y_test.squeeze().numpy(), model_b.predict(x_test))))
+#print("Just using model 2: {}".format(smape(y_test.squeeze().numpy(), model_b.predict(x_test))))
 # Third baseline: Just predict the last value as the next
-print("x+1 = x: {}".format(smape(y_test.squeeze().numpy(), x_test[..., -1].squeeze().numpy())))
+#print("x+1 = x: {}".format(smape(y_test.squeeze().numpy(), x_test[..., -1].squeeze().numpy())))
 ##
 # Try switching classifiers based on ROCS
-print("Using online methods: {}".format(smape(y_test.squeeze().numpy(), online_forecasting(val_rocs, [model_a, model_b], x_test))))
+#print("Using online methods: {}".format(smape(y_test.squeeze().numpy(), online_forecasting(val_rocs, [model_a, model_b], x_test))))
 ###################
 
 # Visualize train results
