@@ -22,12 +22,9 @@ class BaseCompositor:
     def find_best_forecaster(self, x):
         raise NotImplementedError()
 
-    def ranking(self):
-        raise NotImplementedError()
-
     def run(self, x_val, x_test, reuse_prediction=False):
         self.val_losses = self.evaluate_on_validation(x_val)
-        self.ranking = self.ranking()
+        self.ranking = self.compute_ranking()
         self.rocs = self.calculate_rocs(x_val)
         return self.forecast_on_test(x_test, reuse_prediction)
 
@@ -53,7 +50,7 @@ class BaseCompositor:
 
         return np.array(predictions), error
 
-    def ranking(self):
+    def compute_ranking(self):
         if len(self.models) > 2:
             nr_models = len(self.models)
             nr_entries = len(self.val_losses[0])
@@ -74,6 +71,41 @@ class BaseCompositor:
         rankings = (self.val_losses[0] > self.val_losses[1]).astype(np.int)
         return rankings
 
+class BaseAdaptive(BaseCompositor):
+    def rebuild(self, x_val):
+        self.val_losses = self.evaluate_on_validation(x_val)
+        self.ranking = self.compute_ranking()
+        self.rocs = self.calculate_rocs(x_val)
+
+    def run(self, X_val, X_test, threshold=0.1, big_lag=25):
+
+        # Initial creation of ROCs
+        x_val, _ = sliding_split(X_val, big_lag, use_torch=True)
+        self.rebuild(x_val)
+        val_lag_limit = len(x_val)
+        self.test_forecasters = []
+
+        target_idx = self.lag
+        x = X_test[(target_idx-self.lag):target_idx] 
+        prev_mean = torch.mean(x) # TODO: Is this the correct region?
+        predictions = []
+        while target_idx < len(X_test):
+            current_mean = torch.mean(x)
+            if abs(prev_mean-current_mean) > threshold:
+                t = len(X_val) + (target_idx-self.lag)
+                f = t - len(X_val)
+                x_val, _ = sliding_split(torch.cat([X_val, X_test])[f:t], big_lag, use_torch=True)
+                self.rebuild(x_val)
+                prev_mean = current_mean # TODO: Update anyway, even if abs not smaller than threshold?
+
+            best_model = self.find_best_forecaster(x)
+            self.test_forecasters.append(best_model)
+            predictions.append(self.models[best_model].predict(x.unsqueeze(0).unsqueeze(0)))
+            target_idx += 1
+            x = X_test[(target_idx-self.lag):target_idx] 
+
+        return np.array(predictions)
+
 
 class GCCompositor(BaseCompositor):
 
@@ -82,8 +114,8 @@ class GCCompositor(BaseCompositor):
         self.threshold = threshold
 
     def evaluate_on_validation(self, x_val):
-        cams = np.squeeze(np.zeros((len(self.models), x_val.shape[0], x_val.shape[1]-self.lag, self.lag)))
-        losses = np.squeeze(np.zeros((len(self.models), x_val.shape[0])))
+        cams = np.zeros((len(self.models), x_val.shape[0], x_val.shape[1]-self.lag, self.lag))
+        losses = np.zeros((len(self.models), x_val.shape[0]))
         for o, x in enumerate(x_val):
             X, y = sliding_split(x, self.lag, use_torch=True)
             for n_m, m in enumerate(self.models):
@@ -100,7 +132,7 @@ class GCCompositor(BaseCompositor):
         self.cams = cams
         return losses
 
-    def calculate_rocs(self, x_val): #x_val_big
+    def calculate_rocs(self, x_val): 
 
         def split_array_at_zero(arr):
             indices = np.where(arr != 0)[0]
@@ -167,13 +199,18 @@ class GCCompositor(BaseCompositor):
 
         return best_model
 
+class GC_Our_Adaptive(GCCompositor, BaseAdaptive):
+    def test_(self):
+        print("test")
+
 class BaselineCompositor(BaseCompositor):
 
     def evaluate_on_validation(self, x_val):
         X, y = equal_split(x_val, self.lag, use_torch=True)
         losses = torch.zeros((len(self.models), len(X)))
         for n_m, m in enumerate(self.models):
-            losses[n_m] = smape(m.forward(X.unsqueeze(1)).squeeze().detach(), y, axis=1)
+            pred = m.forward(X.unsqueeze(1)).squeeze().detach()
+            losses[n_m] = smape(pred, y, axis=1)
 
         return losses.numpy()
 
@@ -189,8 +226,8 @@ class BaselineCompositor(BaseCompositor):
 class GC_EvenCompositor(GCCompositor):
     
     def evaluate_on_validation(self, x_val):
-        cams = np.squeeze(np.zeros((len(self.models), x_val.shape[0], self.lag, self.lag)))
-        losses = np.squeeze(np.zeros((len(self.models), x_val.shape[0])))
+        cams = np.zeros((len(self.models), x_val.shape[0], self.lag, self.lag))
+        losses = np.zeros((len(self.models), x_val.shape[0]))
         for o, x in enumerate(x_val):
             X, y = equal_split(x, self.lag, use_torch=True)
             for n_m, m in enumerate(self.models):
@@ -204,3 +241,48 @@ class GC_EvenCompositor(GCCompositor):
 
         self.cams = cams
         return losses
+
+class GC_EuclidianComparison(GCCompositor):
+
+    def calculate_rocs(self, x_val): 
+
+        assert len(self.ranking) == len(x_val)
+        rocs = []
+        for _ in range(len(self.models)):
+            rocs.append([])
+
+        for i, rank in enumerate(self.ranking):
+            model = self.models[rank]
+            cams = self.cams[rank][i]
+            #x = x_val[i]
+            for offset, cam in enumerate(cams):
+                x = x_val[i][offset:(self.lag+offset)]
+                max_r = np.max(cam) 
+                if max_r == 0:
+                    continue
+                normalized = cam / max_r
+                mask = (normalized > self.threshold).astype(np.float)
+
+                if np.sum(mask) > 1:
+                    rocs[rank].append(x * mask)
+
+        return rocs
+
+    def find_best_forecaster(self, x):
+        best_model = -1
+        best_indice = None
+        smallest_distance = 1e8
+
+        for i, m in enumerate(self.models):
+            # (x_1, x_2, x_3)
+            # (1,   0.5, 0.2) => (x_1, x_2)
+
+            x = x.squeeze()
+            for r in self.rocs[i]:
+                mask = (r != 0).float()
+                distance = torch.cdist(r.unsqueeze(0).float(), (x*mask).unsqueeze(0), 2).squeeze().item()
+                if distance < smallest_distance:
+                    best_model = i
+                    smallest_distance = distance
+
+        return best_model

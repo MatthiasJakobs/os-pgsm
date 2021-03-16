@@ -8,14 +8,14 @@ from viz import plot_train_log
 from tsx.models.forecaster import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02
 
 implemented_datasets = {
-    "jena": {
-        "ds": Jena_Climate,
-        "lag": 5,
-        "epochs": 200,
-        "batch_size": 300,
-        "lr": 1e-3,
-        "hidden_states": 10,
-    },
+    # "jena": {
+    #     "ds": Jena_Climate,
+    #     "lag": 5,
+    #     "epochs": 200,
+    #     "batch_size": 300,
+    #     "lr": 1e-3,
+    #     "hidden_states": 10,
+    # },
     "bike_total_rents": {
         "ds": Bike_Total_Rents,
         "lag": 5,
@@ -92,7 +92,7 @@ def train_m4_subset(lag=5):
             padded_idx = ds.train_data.columns[idx]
             print(padded_idx)
             ds_train, _ = ds.get(padded_idx)
-            ds_train, ds_val = train_test_split(ds_train, split_percentages=(0.75, 0.25))
+            ds_train, ds_val = train_test_split(ds_train, split_percentages=(2.0/3.0, 1.0/3.0))
 
             x_train, y_train = _apply_window(ds_train, lag)
             x_val, y_val = _apply_window(ds_val, lag)
@@ -122,16 +122,16 @@ def main(ds_name=None, model_name=None):
         X = ds["ds"]().torch()
 
         lag = ds["lag"]
-        [x_train, x_val], [y_train, y_val], x_val_big, x_test = windowing(X, train_input_width=lag, val_input_width=lag*lag, use_torch=True)
-
         epochs = ds["epochs"]
         batch_size = ds["batch_size"]
         lr = ds["lr"]
         hidden_states = ds["hidden_states"]
 
+        [x_train, x_val_small], [y_train, y_val], _, _, _ = windowing(X, train_input_width=lag, val_input_width=lag*lag, use_torch=True)
+
         for m_name in use_models:
             model = models[m_name]
-            train_model(model, x_train, y_train, x_val, y_val, m_name, n_ds, batch_size, epochs, hidden_states, lr, save_plot=True)
+            train_model(model, x_train, y_train, x_val_small, y_val, m_name, n_ds, batch_size, epochs, hidden_states, lr, save_plot=True)
 
 
 if __name__ == "__main__":
