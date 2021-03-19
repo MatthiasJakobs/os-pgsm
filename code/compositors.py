@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 
-from tqdm import trange
+from tqdm import trange, tqdm
 from utils import simple_gradcam, stupid_gradcam
 from datasets.utils import sliding_split, equal_split
 from tsx.metrics import smape
@@ -71,43 +71,7 @@ class BaseCompositor:
         rankings = (self.val_losses[0] > self.val_losses[1]).astype(np.int)
         return rankings
 
-class BaseAdaptive(BaseCompositor):
-    def rebuild(self, x_val):
-        self.val_losses = self.evaluate_on_validation(x_val)
-        self.ranking = self.compute_ranking()
-        self.rocs = self.calculate_rocs(x_val)
-
-    def run(self, X_val, X_test, threshold=0.1, big_lag=25):
-
-        # Initial creation of ROCs
-        x_val, _ = sliding_split(X_val, big_lag, use_torch=True)
-        self.rebuild(x_val)
-        val_lag_limit = len(x_val)
-        self.test_forecasters = []
-
-        target_idx = self.lag
-        x = X_test[(target_idx-self.lag):target_idx] 
-        prev_mean = torch.mean(x) # TODO: Is this the correct region?
-        predictions = []
-        while target_idx < len(X_test):
-            current_mean = torch.mean(x)
-            if abs(prev_mean-current_mean) > threshold:
-                t = len(X_val) + (target_idx-self.lag)
-                f = t - len(X_val)
-                x_val, _ = sliding_split(torch.cat([X_val, X_test])[f:t], big_lag, use_torch=True)
-                self.rebuild(x_val)
-                prev_mean = current_mean # TODO: Update anyway, even if abs not smaller than threshold?
-
-            best_model = self.find_best_forecaster(x)
-            self.test_forecasters.append(best_model)
-            predictions.append(self.models[best_model].predict(x.unsqueeze(0).unsqueeze(0)))
-            target_idx += 1
-            x = X_test[(target_idx-self.lag):target_idx] 
-
-        return np.array(predictions)
-
-
-class GCCompositor(BaseCompositor):
+class GC_Large(BaseCompositor):
 
     def __init__(self, models, lag, threshold=0.5):
         super().__init__(models, lag)
@@ -199,11 +163,119 @@ class GCCompositor(BaseCompositor):
 
         return best_model
 
-class GC_Our_Adaptive(GCCompositor, BaseAdaptive):
-    def test_(self):
-        print("test")
+class BaseAdaptive(BaseCompositor):
 
-class BaselineCompositor(BaseCompositor):
+    def __init__(self, models, lag):
+        super().__init__(models, lag)
+        self.drifts_detected = []
+
+    def rebuild(self, x_val):
+        self.val_losses = self.evaluate_on_validation(x_val)
+        self.ranking = self.compute_ranking()
+        self.rocs = self.calculate_rocs(x_val)
+
+    def detect_concept_drift(self, residuals, ts_length):
+        raise NotImplementedError()
+
+    # TODO: Can be made more efficient
+    def compute_residuals(self, x):
+        if isinstance(x, torch.Tensor):
+            x = x.numpy()
+        res = np.zeros(len(x)-1)
+        for i in range(1, len(x)):
+            res[i-1] = np.mean(x[:(i+1)]) - np.mean(x[:i])
+
+        return res
+
+    def run(self, X_val, X_test, threshold=0.1, big_lag=25):
+
+        # Initial creation of ROCs
+        x_val, _ = sliding_split(X_val, big_lag, use_torch=True)
+        self.rebuild(x_val)
+        self.test_forecasters = []
+
+        val_start = 0
+        val_stop = len(X_val)
+        X_complete = torch.cat([X_val, X_test])
+
+        predictions = []
+        offset = 1
+        for target_idx in trange(self.lag, len(X_test)):
+            x = X_test[(target_idx-self.lag):target_idx] 
+            current_X = X_complete[val_start:val_stop+offset]
+            residuals = self.compute_residuals(current_X)
+            if self.detect_concept_drift(residuals) and len(X_complete) > (val_stop+offset):
+                print("target_idx={}/{} detected drift, recomputing".format(target_idx, len(X_test)))
+                self.drifts_detected.append(target_idx)
+                val_start += offset
+                val_stop += offset
+                x_val, _ = sliding_split(X_complete[val_start:val_stop], big_lag, use_torch=True)
+                offset = 1
+                self.rebuild(x_val)
+
+            best_model = self.find_best_forecaster(x)
+            self.test_forecasters.append(best_model)
+            predictions.append(self.models[best_model].predict(x.unsqueeze(0).unsqueeze(0)))
+            offset += 1
+
+        return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
+
+
+class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
+
+    def __init__(self, models, lag, len_val, threshold=0.5, periodicity=10):
+        super().__init__(models, lag, threshold=threshold)
+        self.periodicity = periodicity
+        self.len_val = len_val
+
+    def detect_concept_drift(self, residuals):
+        return (len(residuals)-self.len_val) >= self.periodicity
+
+class GC_Large_Adaptive_PageHinkley(GC_Large, BaseAdaptive):
+
+    def __init__(self, models, lag, threshold=0.5, lamb=0.2, delta=0.01):
+        super().__init__(models, lag, threshold=threshold)
+        self.lamb = lamb
+        self.delta = delta
+
+    def detect_concept_drift(self, residuals):
+        sr = np.zeros_like(residuals)
+        m_t = np.zeros_like(residuals)
+        M_T = 1
+        for i in range(1, len(residuals)):
+            x_i = residuals[:i]
+            mean_upto_t = np.mean(x_i)
+
+            sr[i] = sr[i-1] + residuals[i]
+            m_t[i] = m_t[i-1] + residuals[i] + sr[i] - self.delta
+            M_T = min(M_T, m_t[i])
+
+        if m_t[-1] - M_T >= self.lamb:
+            return True
+        else:
+            return False
+
+class GC_Large_Adaptive_Hoeffding(GC_Large, BaseAdaptive):
+    def __init__(self, models, lag, threshold=0.5, delta=0.95):
+        super().__init__(models, lag, threshold=threshold)
+        self.delta = delta
+
+    def detect_concept_drift(self, residuals):
+        ts_length = len(residuals)+1
+        residuals = np.array(residuals)
+
+        # Empirical range of residuals
+        R = np.max(np.abs(residuals)) # R = 1 
+
+        epsilon = np.sqrt((R**2)*np.log(1/self.delta) / (2*ts_length))
+
+        if np.abs(residuals[-1]) <= np.abs(epsilon):
+            return False
+        else:
+            return True
+
+
+class Baseline(BaseCompositor):
 
     def evaluate_on_validation(self, x_val):
         X, y = equal_split(x_val, self.lag, use_torch=True)
@@ -223,7 +295,7 @@ class BaselineCompositor(BaseCompositor):
     def find_best_forecaster(self, x):
         return self.rocs.predict(x)[0]
 
-class GC_EvenCompositor(GCCompositor):
+class GC_Small(GC_Large):
     
     def evaluate_on_validation(self, x_val):
         cams = np.zeros((len(self.models), x_val.shape[0], self.lag, self.lag))
@@ -242,7 +314,7 @@ class GC_EvenCompositor(GCCompositor):
         self.cams = cams
         return losses
 
-class GC_EuclidianComparison(GCCompositor):
+class GC_Large_Euclidian(GC_Large):
 
     def calculate_rocs(self, x_val): 
 

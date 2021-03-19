@@ -4,51 +4,66 @@ import argparse
 
 from main import evaluate_test
 from datasets import Jena_Climate, Bike_Total_Rents, Bike_Temperature, Bike_Registered, M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
-from compositors import GCCompositor, BaselineCompositor, GC_EvenCompositor, GC_EuclidianComparison
+from compositors import GCCompositor, BaselineCompositor, GC_EvenCompositor, GC_EuclidianComparison, GC_Big_Adaptive_Hoeffding
 from datasets.utils import windowing, train_test_split, _apply_window, sliding_split, _val_split
 from collections import defaultdict
 from csv import DictReader
+from os.path import exists
 
 from tsx.models.forecaster import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02
 
 val_keys = ['y','pred_rnn','pred_cnn','pred_as01','pred_as02']
-test_keys = ['y','pred_rnn','pred_cnn','pred_as01','pred_as02', 'pred_baseline', 'pred_gradcam_small', 'pred_gradcam_large', 'pred_gradcam_euclid']
+test_keys = ['y','pred_rnn','pred_cnn','pred_as01','pred_as02', 'pred_baseline', 'pred_gradcam_small', 'pred_gradcam_large', 'pred_gradcam_euclid', 'pred_adaptive_hoeffding']
 
 
-def run_comparison(models, x_val_small, x_val_big, X_val, X_test, ds_name, lag):
-    val_npy = np.zeros((len(X_val), len(val_keys)))
-    test_npy = np.zeros((len(X_test), len(test_keys)))
+def run_comparison(models, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False):
 
-    val_npy[:, 0] = np.squeeze(X_val.numpy())
-    test_npy[:, 0] = np.squeeze(X_test.numpy())
+    def _run_and_save(t, comp, index, x_val):
+        if np.sum(t[:, index]) == 0:
+            if len(x_val.shape) == 1:
+                preds = comp.run(x_val, X_test)
+            else:
+                preds, _ = comp.run(x_val, X_test)
+            t[:, index] = np.squeeze(preds)
+        return t
+
+    test_path = "results/{}_test.csv".format(ds_name)
+    val_path = "results/{}_val.csv".format(ds_name)
+
+    if exists(test_path) or exists(val_path):
+        val_npy = np.genfromtxt(val_path, delimiter=",")
+        test_npy = np.genfromtxt(test_path, delimiter=",")
+
+        if val_npy.shape[1] != len(val_keys):
+            padding = np.zeros((len(X_val), len(val_keys) - val_npy.shape[1]))
+            val_npy = np.concatenate([val_npy, padding], axis=1)
+        if test_npy.shape[1] != len(test_keys):
+            padding = np.zeros((len(X_test), len(test_keys) - test_npy.shape[1]))
+            test_npy = np.concatenate([test_npy, padding], axis=1)
+
+    else:
+        val_npy = np.zeros((len(X_val), len(val_keys)))
+        test_npy = np.zeros((len(X_test), len(test_keys)))
+        val_npy[:, 0] = np.squeeze(X_val.numpy())
+        test_npy[:, 0] = np.squeeze(X_test.numpy())
 
     for i, m in enumerate(models):
-        preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
-        x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
-        preds_val = m.predict(x_val_small.unsqueeze(1).float())
-        preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
-        val_npy[:, i+1] = preds_val
-        test_npy[:, i+1] = preds_test
+        if np.sum(val_npy[:, i+1]) == 0:
+            preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
+            x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
+            preds_val = m.predict(x_val_small.unsqueeze(1).float())
+            preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
+            val_npy[:, i+1] = preds_val
+            test_npy[:, i+1] = preds_test
 
-    baseline_comp = BaselineCompositor(models, lag)
-    preds_base, _ = baseline_comp.run(x_val_big, X_test)
+    test_npy = _run_and_save(test_npy, BaselineCompositor(models, lag), 5, x_val_big)
+    test_npy = _run_and_save(test_npy, GCCompositor(models, lag), 6, x_val_big)
+    test_npy = _run_and_save(test_npy, GC_EvenCompositor(models, lag), 7, x_val_big)
+    test_npy = _run_and_save(test_npy, GC_EuclidianComparison(models, lag), 8, x_val_big)
+    test_npy = _run_and_save(test_npy, GC_Big_Adaptive_Hoeffding(models, lag), 9, X_val)
 
-    our_comp = GCCompositor(models, lag)
-    preds_o, _ = our_comp.run(x_val_big, X_test)
-
-    our_comp = GC_EvenCompositor(models, lag)
-    preds_even, _ = our_comp.run(x_val_big, X_test)
-
-    our_comp = GC_EuclidianComparison(models, lag)
-    preds_euclid, _ = our_comp.run(x_val_big, X_test)
-
-    test_npy[:, 5] = np.squeeze(preds_base)
-    test_npy[:, 6] = np.squeeze(preds_o)
-    test_npy[:, 7] = np.squeeze(preds_even)
-    test_npy[:, 8] = np.squeeze(preds_euclid)
-
-    np.savetxt("results/{}_test.csv".format(ds_name), test_npy, header="y,pred_rnn,pred_cnn,pred_as01,pred_as02,pred_baseline,pred_gradcam_large,pred_gradcam_small,pred_gradcam_euclidian", delimiter=",")
-    np.savetxt("results/{}_val.csv".format(ds_name), val_npy, header="y,pred_rnn,pred_cnn,pred_as01,pred_as02", delimiter=",")
+    np.savetxt(test_path, test_npy, header=",".join(test_keys), delimiter=",")
+    np.savetxt(val_path, val_npy, header=",".join(val_keys), delimiter=",")
 
 # Took out Jena (because it takes ages)
 # datasets = [ M4_Hourly(), M4_Weekly(), M4_Quaterly(), M4_Daily(), M4_Monthly(), Jena_Climate(), Bike_Total_Rents(), Bike_Temperature(), Bike_Registered() ]
@@ -58,7 +73,7 @@ def main():
     datasets = [ M4_Hourly(), M4_Weekly(), M4_Quaterly(), M4_Daily(), M4_Monthly(), Bike_Total_Rents(), Bike_Temperature(), Bike_Registered() ]
     dataset_names = [ 'm4_hourly', 'm4_weekly', 'm4_quaterly', 'm4_daily', 'm4_monthly', 'bike_total_rents', 'bike_temperature', 'bike_registered' ]
     comps = [BaselineCompositor, GCCompositor, GC_EvenCompositor, GC_EuclidianComparison]
-    comp_names = ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_euclidian']
+    comp_names = ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_euclidian', 'adaptive_hoeffding']
     model_names = ['rnn', 'cnn', 'as01', 'as02']
 
     idx_range = list(range(17))
@@ -95,11 +110,6 @@ def main():
                 models = [model_a, model_b, model_c, model_d]
 
                 run_comparison(models, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
-                # try:
-                #     run_comparison(models, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
-                # except Exception as e:
-                #     print(e)
-                #     continue
 
         else:
             ds_full_name = ds_name
