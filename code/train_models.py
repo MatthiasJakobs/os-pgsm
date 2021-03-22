@@ -8,6 +8,12 @@ from experiments import single_models, implemented_datasets
 from datasets import M4_Hourly, M4_Daily, M4_Monthly, M4_Weekly, M4_Quaterly, M4_Yearly
 from os.path import exists
 
+lag_mapping = {
+    "5": 25,
+    "10": 40,
+    "15": 60,
+}
+
 def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name, nr_filters, batch_size, epochs, hidden_states, learning_rate, save_plot=False, verbose=True):
         save_path = "models/{}/{}_lag{}.pth".format(model_name, ds_name, lag)
         if not exists(save_path):
@@ -54,7 +60,7 @@ def train_m4_subset(lag=5):
             ds_train, ds_val = train_test_split(ds_train, split_percentages=(2.0/3.0, 1.0/3.0))
 
             x_train, y_train = _apply_window(ds_train, lag)
-            x_val, y_val = _apply_window(ds_val, lag)
+            x_val, y_val = _apply_window(ds_val, lag_mapping[str(lag)])
 
             for m_name, model_obj in single_models.items():
                 model = model_obj["obj"]
@@ -75,7 +81,7 @@ def main(lag, ds_name=None, model_name=None):
 
     if ds_name is not None:
         if ds_name == "M4":
-            train_m4_subset()
+            train_m4_subset(lag=lag)
             return 
         else:
             use_ds = [ds_name]
@@ -90,14 +96,14 @@ def main(lag, ds_name=None, model_name=None):
         batch_size = ds["batch_size"]
         lr = ds["lr"]
 
-        [x_train, x_val_small], [y_train, y_val], _, _, _ = windowing(X, train_input_width=lag, val_input_width=lag*lag, use_torch=True)
+        [x_train, x_val_small], [y_train, y_val], _, _, _ = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
 
         for m_name in use_models:
             model_obj = single_models[m_name]
             model = model_obj["obj"]
             nr_filters = model_obj["nr_filters"]
             hidden_states = model_obj["hidden_states"]
-            train_model(model, x_train, y_train, x_val_small, y_val, lag, m_name, n_ds, nr_filters, batch_size, epochs, hidden_states, lr, save_plot=True)
+            train_model(model, x_train, y_train, x_val_small, y_val, lag, m_name, n_ds, nr_filters, batch_size, epochs, hidden_states, lr, save_plot=True, verbose=False)
 
 
 if __name__ == "__main__":
