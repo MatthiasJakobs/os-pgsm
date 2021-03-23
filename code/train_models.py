@@ -58,9 +58,11 @@ def train_m4_subset(lag=5):
             ds_train, ds_val = train_test_split(ds_train, split_percentages=(2.0/3.0, 1.0/3.0))
 
             x_train, y_train = _apply_window(ds_train, lag)
-            x_val, y_val = _apply_window(ds_val, lag_mapping[str(lag)])
+            x_val, y_val = _apply_window(ds_val, lag)
 
             for m_name, model_obj in single_models.items():
+                if "adaptive" in m_name or "lstm" in m_name:
+                    continue
                 model = model_obj["obj"]
                 nr_filters = model_obj["nr_filters"]
                 hidden_states = model_obj["hidden_states"]

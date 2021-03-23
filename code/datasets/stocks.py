@@ -18,10 +18,10 @@ class DJI(BaseStock):
     def load_ds(self):
         return super().load_ds("code/datasets/Processed_DJI.csv")
 
-class RUSSEL(BaseStock):
+class RUSSELL(BaseStock):
 
     def load_ds(self):
-        return super().load_ds("code/datasets/Processed_RUSSEL.csv")
+        return super().load_ds("code/datasets/Processed_RUSSELL.csv")
 
 class NYSE(BaseStock):
 

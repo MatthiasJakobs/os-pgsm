@@ -210,6 +210,60 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
+    "NASDAQ": {
+        "ds": NASDAQ,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "DJI": {
+        "ds": DJI,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "NYSE": {
+        "ds": NYSE,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "RUSSELL": {
+        "ds": RUSSELL,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "Energy_RH1": {
+        "ds": Energy_RH1,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "Energy_RH2": {
+        "ds": Energy_RH2,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "Energy_TH4": {
+        "ds": Energy_TH4,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "Energy_TH5": {
+        "ds": Energy_TH5,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
+    "CloudCoverage": {
+        "ds": CloudCoverage,
+        "epochs": 2500,
+        "batch_size": 100,
+        "lr": 1e-4,
+    },
 }
 
 lag_mapping = {
