@@ -4,15 +4,10 @@ import argparse
 
 from datasets.utils import windowing, _apply_window, train_test_split
 from viz import plot_train_log
-from experiments import single_models, implemented_datasets
+from experiments import single_models, implemented_datasets, lag_mapping
 from datasets import M4_Hourly, M4_Daily, M4_Monthly, M4_Weekly, M4_Quaterly, M4_Yearly
 from os.path import exists
 
-lag_mapping = {
-    "5": 25,
-    "10": 40,
-    "15": 60,
-}
 
 def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name, nr_filters, batch_size, epochs, hidden_states, learning_rate, save_plot=False, verbose=True):
         save_path = "models/{}/{}_lag{}.pth".format(model_name, ds_name, lag)
@@ -23,7 +18,10 @@ def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name,
             model_bests = []
             for i in range(5):
                 try:
-                    m = model(batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=x_train.shape[-1], hidden_states=hidden_states, learning_rate=learning_rate)
+                    if "lstm" in model_name or "adaptive_mixture" in model_name:
+                        m = model(lag, batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=x_train.shape[-1], hidden_states=hidden_states, learning_rate=learning_rate)
+                    else:
+                        m = model(batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=x_train.shape[-1], hidden_states=hidden_states, learning_rate=learning_rate)
                 except TypeError:
                     # TODO: FCN does not accept "hidden_states" variable. Maybe pass configs as dictionary? 
                     m = model(batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=x_train.shape[-1], learning_rate=learning_rate)
@@ -103,7 +101,7 @@ def main(lag, ds_name=None, model_name=None):
             model = model_obj["obj"]
             nr_filters = model_obj["nr_filters"]
             hidden_states = model_obj["hidden_states"]
-            train_model(model, x_train, y_train, x_val_small, y_val, lag, m_name, n_ds, nr_filters, batch_size, epochs, hidden_states, lr, save_plot=True, verbose=False)
+            train_model(model, x_train, y_train, x_val_small, y_val, lag, m_name, n_ds, nr_filters, batch_size, epochs, hidden_states, lr, save_plot=False, verbose=False)
 
 
 if __name__ == "__main__":

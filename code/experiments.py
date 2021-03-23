@@ -1,5 +1,44 @@
+import torch
 from datasets import *
-from tsx.models.forecaster import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02
+from tsx.models.forecaster import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, Simple_LSTM
+from compositors import *
+from adaptive_mixtures import AdaptiveMixForecaster
+
+skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
+
+comps =                [Baseline,   GC_Large,        GC_Small,        GC_Large_Euclidian,        GC_Small_Euclidian,        GC_Large_Adaptive_Hoeffding, GC_Large_Adaptive_Periodic]
+comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
+
+def load_model(m_name, d_name, lag, ts_length):
+    m_obj = single_models[m_name]
+    d_obj = implemented_datasets[d_name]
+
+    try:
+        batch_size = d_obj["batch_size"]
+    except:
+        batch_size = 500
+    try:
+        epochs = d_obj["epochs"]
+    except:
+        epochs = 3000
+    try:
+        lr = d_obj["lr"]
+    except:
+        lr = 1e-3
+
+    nr_filters = m_obj["nr_filters"]
+    hidden_states = m_obj["hidden_states"]
+
+    if "lstm" in m_name or "adaptive_mixture" in m_name:
+        m = m_obj['obj'](lag, batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
+    elif "cnn" in m_name:
+        m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, learning_rate=lr)
+    else:
+        m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
+
+    m.load_state_dict(torch.load("models/{}/{}_lag{}.pth".format(m_name, d_name, lag)))
+
+    return m
 
 single_models = {
     "rnn_a" : {
@@ -62,6 +101,16 @@ single_models = {
         "nr_filters": 128,
         "hidden_states": 10
     },
+    "lstm_a" : {
+        "obj": Simple_LSTM,
+        "nr_filters": 128,
+        "hidden_states": 10
+    },
+    "adaptive_mixture": {
+        "obj": AdaptiveMixForecaster,
+        "nr_filters": None,
+        "hidden_states": None
+    }
 }
 
 implemented_datasets = {
@@ -162,3 +211,12 @@ implemented_datasets = {
         "lr": 1e-4,
     },
 }
+
+lag_mapping = {
+    "5": 25,
+    "10": 40,
+    "15": 60,
+}
+
+val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
+test_keys = val_keys + ['pred_' + w for w in comp_names]

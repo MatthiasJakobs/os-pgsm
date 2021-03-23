@@ -1,9 +1,11 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+from matplotlib.colors import LogNorm
 from datasets.utils import *
 from tsx.utils import to_numpy
 from tsx.visualizations import plot_cam
+from experiments import implemented_datasets, test_keys
 
 def compare_logs(log_a, log_b, mse_baseline=None, mae_baseline=None, smape_baseline=None):
 
@@ -119,3 +121,45 @@ def plot_cams(compositor, x_val, model_names, ds_name, comp_name):
             nonzero += 1
 
         plot_cam(np.concatenate(xs, axis=0), np.concatenate(cs, axis=0), title="{} - {} ({})".format(comp_name, model_names[m], ds_name), save_to="plots/cams_{}_{}_{}.pdf".format(comp_name, model_names[m], ds_name))
+
+
+def plot_runtime_ds(idx=None, path="results/runtimes.npy"):
+    rtimes = np.load(path)
+
+    if idx is None:
+        idx = list(range(len(rtimes)))
+    else:
+        idx = [idx]
+
+    for i in idx:
+        d_name = list(implemented_datasets.keys())[i]
+        d_runtimes = rtimes[i]
+
+        m_names = test_keys[1:]
+
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        ax.bar(np.arange(len(m_names)), d_runtimes, log=True)
+        ax.set_ylabel("runtime (s)")
+        ax.set_xticks(np.arange(len(m_names)))
+        ax.set_xticklabels([n[5:] for n in m_names], rotation=90)
+
+        fig.tight_layout()
+        fig.savefig("plots/runtimes/{}.pdf".format(d_name))
+
+def plot_runtime_all(path="results/runtimes.npy"):
+
+    rtimes = np.load(path)
+    m_names = test_keys[1:]
+
+    fig = plt.figure(figsize=(10, 6))
+    ax = fig.add_subplot(1,1,1)
+    i = ax.matshow(rtimes, cmap="viridis", norm=LogNorm(vmin=0.000001, vmax=np.max(rtimes)))
+    ax.set_xticks(np.arange(len(m_names)))
+    ax.set_yticks(np.arange(rtimes.shape[0]))
+    ax.set_xticklabels([n[5:] for n in m_names], rotation=90)
+    ax.set_yticklabels(list(implemented_datasets.keys()))
+    #ax.imshow(rtimes, log=True)
+    fig.colorbar(i)
+    fig.tight_layout()
+    fig.savefig("plots/runtimes/all.pdf")

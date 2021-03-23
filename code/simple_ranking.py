@@ -1,15 +1,13 @@
 import numpy as np
 import glob
 from tsx.metrics import smape
-
-test_keys = ['y','pred_rnn','pred_cnn','pred_as01','pred_as02', 'pred_baseline', 'pred_gradcam_small', 'pred_gradcam_large', 'pred_gradcam_euclid']
-
+from experiments import test_keys, val_keys
 
 def simple_test_ranking(path):
     results = np.genfromtxt(path, delimiter=",")
 
-    baseline_index = 5
-    model_indices = [6, 7, 8]
+    baseline_index = len(val_keys)+1
+    model_indices = list(range(baseline_index, len(test_keys)))
     baseline = np.squeeze(results[:, baseline_index])
     y = np.squeeze(results[:, 0])
 
