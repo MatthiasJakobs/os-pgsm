@@ -16,14 +16,15 @@ class AdaptiveMixForecaster(nn.Module):
         self.lr = learning_rate
         self.batch_size = batch_size
         self.experts = []
+        self.nr_experts = nr_experts
         for i in range(nr_experts):
             self.experts.append(self.generate_expert())
 
         L = [
-            nn.Conv1d(1, len(self.experts), 3),
+            nn.Conv1d(1, len(self.experts), 3, padding=1),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(3 * len(self.experts), len(self.experts)),
+            nn.Linear(self.lag * len(self.experts), len(self.experts)),
             nn.Softmax(dim=-1)
         ]
         self.gating_network = nn.Sequential(*L)

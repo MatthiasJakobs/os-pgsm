@@ -146,6 +146,7 @@ def plot_runtime_ds(idx=None, path="results/runtimes.npy"):
 
         fig.tight_layout()
         fig.savefig("plots/runtimes/{}.pdf".format(d_name))
+        plt.close(fig)
 
 def plot_runtime_all(path="results/runtimes.npy"):
 
@@ -163,3 +164,4 @@ def plot_runtime_all(path="results/runtimes.npy"):
     fig.colorbar(i)
     fig.tight_layout()
     fig.savefig("plots/runtimes/all.pdf")
+    plt.close(fig)

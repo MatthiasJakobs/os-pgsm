@@ -21,12 +21,12 @@ class Energy_RH2(BaseEnergy):
     def load_ds(self):
         return super().load_ds("RH_2")
 
-class Energy_TH4(BaseEnergy):
+class Energy_T4(BaseEnergy):
 
     def load_ds(self):
-        return super().load_ds("TH4")
+        return super().load_ds("T4")
 
-class Energy_TH5(BaseEnergy):
+class Energy_T5(BaseEnergy):
 
     def load_ds(self):
-        return super().load_ds("TH5")
+        return super().load_ds("T5")

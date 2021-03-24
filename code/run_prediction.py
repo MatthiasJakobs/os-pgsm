@@ -14,9 +14,10 @@ from os.path import exists
 from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit
 from tsx.models.forecaster import Simple_LSTM
 
-def run_comparison(models, model_names, override, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False):
+def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False):
 
-    def _run_and_save(modified, t, comp, comp_name, x_val):
+    def _run_and_save(t, comp, comp_name, x_val):
+        modified = False
         if "pred_" + comp_name not in t.columns or comp_name in override:
             if len(x_val.shape) == 1:
                 preds = comp.run(x_val, X_test, big_lag=lag_mapping[str(lag)])
@@ -31,9 +32,7 @@ def run_comparison(models, model_names, override, x_val_small, x_val_big, X_val,
     test_path = "results/{}_lag{}_test.csv".format(ds_name, lag)
     val_path = "results/{}_lag{}_val.csv".format(ds_name, lag)
 
-    modified = False
-
-    r_times = np.zeros(len(test_keys)-1)
+    modified_single = False
 
     # Assume both or neither exists
     if exists(test_path):
@@ -47,7 +46,6 @@ def run_comparison(models, model_names, override, x_val_small, x_val_big, X_val,
         pd_test["# y"] = np.squeeze(X_test.numpy())
 
     for i, m in enumerate(models):
-        #if np.sum(val_npy[:, i+1]) == 0:
 
         if "pred_" + model_names[i] in pd_val.columns:
             print("skip {} because it already exists".format(model_names[i]))
@@ -57,14 +55,14 @@ def run_comparison(models, model_names, override, x_val_small, x_val_big, X_val,
         before = time.time()
         preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
         after = time.time()
-        r_times[i] = after-before
+        runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
 
         x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
         preds_val = m.predict(x_val_small.unsqueeze(1).float())
         preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
         pd_val["pred_" + model_names[i]] = preds_val
         pd_test["pred_" + model_names[i]] = preds_test
-        modified = True
+        modified_single = True
     
     # remove unwanted models from compositions
     comp_models = []
@@ -80,16 +78,17 @@ def run_comparison(models, model_names, override, x_val_small, x_val_big, X_val,
 
         before = time.time()
         if isinstance(c_idx, BaseAdaptive):
-            modified, pd_test = _run_and_save(modified, pd_test, c_idx, comp_names[idx], X_val)
+            modified_comp, pd_test = _run_and_save(pd_test, c_idx, comp_names[idx], X_val)
         else:
-            modified, pd_test = _run_and_save(modified, pd_test, c_idx, comp_names[idx], x_val_big)
+            modified_comp, pd_test = _run_and_save(pd_test, c_idx, comp_names[idx], x_val_big)
         after = time.time()
-        r_times[len(models) + len(skip_models_composit) + idx] = after-before
+        if modified_comp:
+            runtimes["pred_" + comp_names[idx]].loc[ds_name] = after-before
 
-    if modified:
+    if modified_single or modified_comp:
         pd_test.to_csv(test_path)
         pd_val.to_csv(val_path)
-    return r_times
+    return runtimes
 
 def main(lag, ds_names=None, override=None):
     if ds_names is not None:
@@ -102,7 +101,10 @@ def main(lag, ds_names=None, override=None):
     
     model_names = single_models.keys()
 
-    runtimes = np.zeros((len(dataset_names), len(test_keys)-1))
+    if exists("results/runtimes.csv"):
+        runtimes = pd.read_csv("results/runtimes.csv", index_col=0)
+    else:
+        runtimes = pd.DataFrame(index=list(implemented_datasets.keys()), columns=test_keys[1:])
 
     idx_range = list(range(17))
 
@@ -140,18 +142,15 @@ def main(lag, ds_names=None, override=None):
             X = ds.torch()
             [x_train, x_val_small], [_, _], x_val_big, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
 
-            ts_length = lag # TODO: Is this correct?
+            ts_length = lag 
 
             models = []
             for m_name in model_names:
                 models.append(load_model(m_name, d_name, lag, ts_length))
         
-            rtimes = run_comparison(models, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
-            runtimes[d_ind] = rtimes
+            runtimes = run_comparison(models, runtimes, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
 
-    if len(runtimes) == len(implemented_datasets.keys()):
-        print("bla")
-        #np.save("results/runtimes.npy", runtimes)
+    runtimes.to_csv("results/runtimes.csv")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

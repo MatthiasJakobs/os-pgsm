@@ -246,14 +246,14 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
-    "Energy_TH4": {
-        "ds": Energy_TH4,
+    "Energy_T4": {
+        "ds": Energy_T4,
         "epochs": 2500,
         "batch_size": 100,
         "lr": 1e-4,
     },
-    "Energy_TH5": {
-        "ds": Energy_TH5,
+    "Energy_T5": {
+        "ds": Energy_T5,
         "epochs": 2500,
         "batch_size": 100,
         "lr": 1e-4,

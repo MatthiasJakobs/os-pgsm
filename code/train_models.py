@@ -45,6 +45,8 @@ def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name,
 
             if save_plot:
                 plot_train_log(logs, "plots/train_{}_{}.pdf".format(ds_name, model_name), best_epoch=best)
+        else:
+            print("{} already trained, skip".format(save_path))
 
 def train_m4_subset(lag=5):
     name_list = ['hourly', 'weekly', 'quaterly', 'daily', 'monthly']

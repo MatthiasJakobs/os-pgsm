@@ -1,5 +1,6 @@
 import torch
 import numpy as np
+import time
 
 from tqdm import trange, tqdm
 from utils import simple_gradcam, stupid_gradcam
@@ -165,9 +166,9 @@ class GC_Large(BaseCompositor):
 
 class BaseAdaptive(BaseCompositor):
 
-    def __init__(self, models, lag):
+    def __init__(self, models, lag, val_selection="sliding"):
         super().__init__(models, lag)
-        self.drifts_detected = []
+        self.val_selection = val_selection
 
     def rebuild(self, x_val):
         self.val_losses = self.evaluate_on_validation(x_val)
@@ -177,7 +178,14 @@ class BaseAdaptive(BaseCompositor):
     def detect_concept_drift(self, residuals, ts_length):
         raise NotImplementedError()
 
-    def run(self, X_val, X_test, threshold=0.1, big_lag=25):
+    def sliding_val(self, val_start, val_stop):
+        return val_start+1, val_stop+1
+
+    def stationary_val(self, val_start, val_stop):
+        return val_start, val_stop+1
+
+    def run(self, X_val, X_test, threshold=0.1, big_lag=25, verbose=True, dry_run=False):
+        self.drifts_detected = []
         val_start = 0
         val_stop = len(X_val) + self.lag
         X_complete = torch.cat([X_val, X_test])
@@ -188,52 +196,65 @@ class BaseAdaptive(BaseCompositor):
         predictions = []
         offset = 1
 
+        if self.val_selection == "sliding":
+            new_val = self.sliding_val
+        elif self.val_selection == "stationary":
+            new_val = self.stationary_val
+        else:
+            raise NotImplementedError("Unknown val selection method {}".format(val_selection))
+
         # Initial creation of ROCs
-        x_val, _ = sliding_split(current_X, big_lag, use_torch=True)
+        x_val, _ = equal_split(current_X, big_lag, use_torch=True)
         self.rebuild(x_val)
         self.test_forecasters = []
 
         means.append(torch.mean(current_X).numpy())
 
-        for target_idx in trange(self.lag, len(X_test)):
+        if verbose:
+            used_range = trange(self.lag, len(X_test))
+        else:
+            used_range = range(self.lag, len(X_test))
+
+        for target_idx in used_range: 
             f_test = (target_idx-self.lag)
             t_test = (target_idx)
             x = X_test[f_test:t_test] 
-            current_X = X_complete[(val_start+offset):(val_stop+offset)]
+
+            val_start, val_stop = new_val(val_start, val_stop)
+            current_X = X_complete[val_start:val_stop]
             means.append(torch.mean(current_X).numpy())
 
             residuals.append(means[-1]-means[-2])
 
-            if len(residuals) > 1 and len(X_complete) > (val_stop+offset):
+            if len(residuals) > 1: #and len(X_complete) > (val_stop+offset):
                 if self.detect_concept_drift(residuals, len(current_X)):
-                    print("target_idx={}/{} detected drift, recomputing".format(target_idx, len(X_test)))
                     self.drifts_detected.append(target_idx)
-                    val_start += offset
-                    val_stop += offset
+                    val_start = val_stop - len(X_val) - self.lag
                     current_X = X_complete[val_start:val_stop]
-                    x_val, _ = sliding_split(current_X, big_lag, use_torch=True)
-                    offset = 1
-                    residuals = [torch.mean(current_X).numpy()]
-                    self.rebuild(x_val)
+                    x_val, _ = equal_split(current_X, big_lag, use_torch=True)
+                    residuals = []
+                    means = [torch.mean(current_X).numpy()]
+                    if not dry_run:
+                        self.rebuild(x_val)
 
             best_model = self.find_best_forecaster(x)
             self.test_forecasters.append(best_model)
             predictions.append(self.models[best_model].predict(x.unsqueeze(0).unsqueeze(0)))
-            offset += 1
 
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
 class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
 
-    def __init__(self, models, lag, threshold=0.5, periodicity=None):
+    def __init__(self, models, lag, threshold=0.5, periodicity=None, val_selection="sliding"):
         super().__init__(models, lag, threshold=threshold)
         self.periodicity = periodicity
+        self.val_selection = val_selection
 
-    def run(self, X_val, X_test, threshold=0.1, big_lag=25):
+    def run(self, X_val, X_test, **kwargs):
         if self.periodicity is None:
             self.periodicity = int(len(X_test) / 10.0)
 
-        return BaseAdaptive.run(self, X_val, X_test, threshold=threshold, big_lag=big_lag)
+        return BaseAdaptive.run(self, X_val, X_test, **kwargs)
 
     def detect_concept_drift(self, residuals, x_len):
         return len(residuals) >= self.periodicity
@@ -263,9 +284,10 @@ class GC_Large_Adaptive_PageHinkley(GC_Large, BaseAdaptive):
             return False
 
 class GC_Large_Adaptive_Hoeffding(GC_Large, BaseAdaptive):
-    def __init__(self, models, lag, threshold=0.5, delta=0.95):
+    def __init__(self, models, lag, threshold=0.5, val_selection="sliding", delta=0.95):
         super().__init__(models, lag, threshold=threshold)
         self.delta = delta
+        self.val_selection = val_selection
 
     def detect_concept_drift(self, residuals, ts_length):
         #ts_length = len(residuals)+1
