@@ -62,16 +62,22 @@ def plot_test_preds(preds, labels, scores, x_test, name, first_n=30):
     plt.tight_layout()
     plt.savefig("plots/{}.pdf".format(name))
 
-def plot_compositor_results(comp, preds, x_test, model_names, ds_name, comp_name):
-    ranking = comp.test_forecasters
-    x_test = x_test[5:]
-    preds = preds[5:]
-    assert len(np.unique(ranking)) <= 4
+def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, comp_name, lag):
+    from_x = x_range[0]
+    to_x = x_range[1]
 
-    background_colors = ["teal", "lime", "orange", "mediumorchid"]
-    bg_legends = [False, False, False, False]
+    x_test = x_test[lag:]
+    preds = preds[lag:]
+
+    x_test = x_test[from_x:to_x]
+    preds = preds[from_x:to_x]
+    ranking = comp.test_forecasters[from_x:to_x]
+    #assert len(np.unique(ranking)) <= 4
+
+    background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
+    bg_legends = [False] * len(model_names)
     plt.figure()
-    for i in range(len(x_test)):
+    for i in range(to_x-from_x):
         bg_color = background_colors[ranking[i]]
         if not bg_legends[ranking[i]]:
             plt.axvspan(i-0.5, i+0.5, facecolor=bg_color, alpha=0.3, label=model_names[ranking[i]])
@@ -81,13 +87,14 @@ def plot_compositor_results(comp, preds, x_test, model_names, ds_name, comp_name
 
     plt.plot(x_test, color="dimgray", label="$x_{test}$")
     plt.plot(preds, color="crimson", label="prediction")
-    plt.xlim((-0.5, len(x_test) - 0.5))
+    plt.xlim((- 0.5, (to_x-from_x) - 0.5))
     plt.xlabel("$t$")
     plt.ylabel("$y$")
+    plt.xticks(np.arange(0, to_x-from_x, step=5), list(range(from_x, to_x, 5)), rotation=70)
     plt.title("{} on {}".format(comp_name, ds_name))
     plt.legend()
     plt.tight_layout()
-    plt.savefig("plots/test_{}_{}.pdf".format(comp_name, ds_name))
+    plt.savefig("plots/explainability/test_{}_{}.pdf".format(comp_name, ds_name))
 
 
 def plot_cams(compositor, x_val, model_names, ds_name, comp_name):

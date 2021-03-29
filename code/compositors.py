@@ -12,10 +12,11 @@ from sklearn.neighbors import KNeighborsClassifier
 
 class BaseCompositor:
 
-    def __init__(self, models, lag):
+    def __init__(self, models, lag, big_lag):
         self.models = models
         # Assume identical lag for all modules no. Easily changable
         self.lag = lag
+        self.big_lag = big_lag
 
     def calculate_rocs(self):
         raise NotImplementedError()
@@ -74,8 +75,8 @@ class BaseCompositor:
 
 class GC_Large(BaseCompositor):
 
-    def __init__(self, models, lag, threshold=0.5):
-        super().__init__(models, lag)
+    def __init__(self, models, lag, big_lag, threshold=0.5):
+        super().__init__(models, lag, big_lag)
         self.threshold = threshold
 
     def evaluate_on_validation(self, x_val):
@@ -166,8 +167,8 @@ class GC_Large(BaseCompositor):
 
 class BaseAdaptive(BaseCompositor):
 
-    def __init__(self, models, lag, val_selection="sliding"):
-        super().__init__(models, lag)
+    def __init__(self, models, lag, big_lag, val_selection="sliding"):
+        super().__init__(models, lag, big_lag)
         self.val_selection = val_selection
 
     def rebuild(self, x_val):
@@ -245,8 +246,8 @@ class BaseAdaptive(BaseCompositor):
 
 class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
 
-    def __init__(self, models, lag, threshold=0.5, periodicity=None, val_selection="sliding"):
-        super().__init__(models, lag, threshold=threshold)
+    def __init__(self, models, lag, big_lag, threshold=0.5, periodicity=None, val_selection="sliding"):
+        super().__init__(models, lag, big_lag, threshold=threshold)
         self.periodicity = periodicity
         self.val_selection = val_selection
 
@@ -261,8 +262,8 @@ class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
 
 class GC_Large_Adaptive_PageHinkley(GC_Large, BaseAdaptive):
 
-    def __init__(self, models, lag, threshold=0.5, lamb=0.2, delta=0.01):
-        super().__init__(models, lag, threshold=threshold)
+    def __init__(self, models, lag, big_lag, threshold=0.5, lamb=0.2, delta=0.01):
+        super().__init__(models, lag, big_lag, threshold=threshold)
         self.lamb = lamb
         self.delta = delta
 
@@ -284,8 +285,8 @@ class GC_Large_Adaptive_PageHinkley(GC_Large, BaseAdaptive):
             return False
 
 class GC_Large_Adaptive_Hoeffding(GC_Large, BaseAdaptive):
-    def __init__(self, models, lag, threshold=0.5, val_selection="sliding", delta=0.95):
-        super().__init__(models, lag, threshold=threshold)
+    def __init__(self, models, lag, big_lag, threshold=0.5, val_selection="sliding", delta=0.95):
+        super().__init__(models, lag, big_lag, threshold=threshold)
         self.delta = delta
         self.val_selection = val_selection
 
@@ -327,7 +328,7 @@ class Baseline(BaseCompositor):
 class GC_Small(GC_Large):
     
     def evaluate_on_validation(self, x_val):
-        cams = np.zeros((len(self.models), x_val.shape[0], self.lag, self.lag))
+        cams = np.zeros((len(self.models), x_val.shape[0], int(self.big_lag/self.lag), self.lag))
         losses = np.zeros((len(self.models), x_val.shape[0]))
         for o, x in enumerate(x_val):
             X, y = equal_split(x, self.lag, use_torch=True)
@@ -390,5 +391,5 @@ class GC_Large_Euclidian(GC_Large):
 
 class GC_Small_Euclidian(GC_Large_Euclidian, GC_Small):
 
-    def __init__(self, models, lag, threshold=0.5):
-        super().__init__(models, lag, threshold=threshold)
+    def __init__(self, models, lag, big_lag, threshold=0.5):
+        super().__init__(models, lag, big_lag, threshold=threshold)

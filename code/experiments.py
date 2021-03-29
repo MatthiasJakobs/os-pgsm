@@ -11,20 +11,26 @@ comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_l
 
 def load_model(m_name, d_name, lag, ts_length):
     m_obj = single_models[m_name]
-    d_obj = implemented_datasets[d_name]
 
-    try:
-        batch_size = d_obj["batch_size"]
-    except:
+    if d_name.startswith("m4"):
         batch_size = 500
-    try:
-        epochs = d_obj["epochs"]
-    except:
         epochs = 3000
-    try:
-        lr = d_obj["lr"]
-    except:
         lr = 1e-3
+    else:
+        d_obj = implemented_datasets[d_name]
+
+        try:
+            batch_size = d_obj["batch_size"]
+        except:
+            batch_size = 500
+        try:
+            epochs = d_obj["epochs"]
+        except:
+            epochs = 3000
+        try:
+            lr = d_obj["lr"]
+        except:
+            lr = 1e-3
 
     nr_filters = m_obj["nr_filters"]
     hidden_states = m_obj["hidden_states"]
@@ -144,12 +150,6 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
-    # "CinCECGTorso": {
-    #     "ds": CinCECGTorso(),
-    #     "epochs": 2500,
-    #     "batch_size": 100,
-    #     "lr": 1e-4,
-    # },
     "Cricket": {
         "ds": Cricket,
         "epochs": 2500,
@@ -174,12 +174,6 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
-    # "MixedShapes": {
-    #     "ds": MixedShapes(),
-    #     "epochs": 2500,
-    #     "batch_size": 100,
-    #     "lr": 1e-4,
-    # },
     "Phoneme": {
         "ds": Phoneme,
         "epochs": 2500,
@@ -198,12 +192,6 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
-    # "SharePriceIncrease": {
-    #     "ds": SharePriceIncrease(),
-    #     "epochs": 2500,
-    #     "batch_size": 100,
-    #     "lr": 1e-4,
-    # },
     "SNP500": {
         "ds": SNP500,
         "epochs": 2500,

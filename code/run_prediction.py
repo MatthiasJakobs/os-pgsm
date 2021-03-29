@@ -3,6 +3,7 @@ import numpy as np
 import argparse
 import time
 import pandas as pd
+import glob
 
 from main import evaluate_test
 from datasets import Jena_Climate, Bike_Total_Rents, Bike_Temperature, Bike_Registered, M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
@@ -47,7 +48,7 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
 
     for i, m in enumerate(models):
 
-        if "pred_" + model_names[i] in pd_val.columns:
+        if "pred_" + model_names[i] in pd_val.columns and model_names[i] not in override:
             print("skip {} because it already exists".format(model_names[i]))
             continue
 
@@ -55,7 +56,8 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
         before = time.time()
         preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
         after = time.time()
-        runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
+        if runtimes is not None:
+            runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
 
         x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
         preds_val = m.predict(x_val_small.unsqueeze(1).float())
@@ -74,7 +76,7 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
     start_idx = len(val_keys)
 
     for idx in range(len(comp_names)):
-        c_idx = comps[idx](models, lag)
+        c_idx = comps[idx](models, lag, lag_mapping[str(lag)])
 
         before = time.time()
         if isinstance(c_idx, BaseAdaptive):
@@ -82,13 +84,45 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
         else:
             modified_comp, pd_test = _run_and_save(pd_test, c_idx, comp_names[idx], x_val_big)
         after = time.time()
-        if modified_comp:
+        if modified_comp and runtimes is not None:
             runtimes["pred_" + comp_names[idx]].loc[ds_name] = after-before
 
     if modified_single or modified_comp:
-        pd_test.to_csv(test_path)
-        pd_val.to_csv(val_path)
+        pd_test.to_csv(test_path, index=False)
+        pd_val.to_csv(val_path, index=False)
     return runtimes
+
+def _get_m4_ds(name):
+    if "hourly" in name:
+        ds = M4_Hourly
+    elif "daily" in name:
+        ds = M4_Daily
+    elif "monthly" in name:
+        ds = M4_Monthly
+    elif "quaterly" in name:
+        ds = M4_Quaterly
+    elif "weekly" in name:
+        ds = M4_Weekly
+    else:
+        raise NotImplementedError("Unknown M4 dataset", name)
+
+    return ds
+
+def _get_m4_full(part, index):
+    if "hourly" in part:
+        char = "H"
+    elif "daily" in part:
+        char = "D"
+    elif "monthly" in part:
+        char = "M"
+    elif "quaterly" in part:
+        char = "Q"
+    elif "weekly" in part:
+        char = "W"
+    else:
+        raise NotImplementedError("Unknown M4 dataset", part, index)
+
+    return part + "_" + char + str(index)
 
 def main(lag, ds_names=None, override=None):
     if ds_names is not None:
@@ -101,39 +135,49 @@ def main(lag, ds_names=None, override=None):
     
     model_names = single_models.keys()
 
-    if exists("results/runtimes.csv"):
-        runtimes = pd.read_csv("results/runtimes.csv", index_col=0)
+    if exists("results/runtimes_{}.csv".format(lag)):
+        runtimes = pd.read_csv("results/runtimes_{}.csv".format(lag), index_col=0)
     else:
         runtimes = pd.DataFrame(index=list(implemented_datasets.keys()), columns=test_keys[1:])
 
-    idx_range = list(range(17))
+    idx_range = list(range(1, 21))
 
     for d_ind, d_name in enumerate(dataset_names):
+
+        # assume: m4_hourly, m4_weekly, m4_quaterly, m4_monthly etc.
         if d_name.startswith("m4"):
+
+            ds = _get_m4_ds(d_name)()
             keys = ds.train_data.columns
             for idx in idx_range:
-                designator = keys[idx]
-                ds_full_name = "{}_{}".format(ds_name, designator)
+                # get all trained single models (some models will not train because the lag is too small)
+                ds_full_name = _get_m4_full(d_name, idx)
+                all_singles = glob.glob("models/*/{}_lag{}.pth".format(ds_full_name, lag))
+
+                if len(all_singles) != len(list(single_models.keys())):
+                    print("Dataset {} {} with lag {} does not contain all single models, skipping".format(d_name, idx, lag))
+                    continue
+
+                models = []
+                for m_name in model_names:
+                    # if m_name not in skip_models_composit:
+                    models.append(load_model(m_name, ds_full_name, lag, lag))
+
+                designator = keys[idx-1]
                 X_train, X_test = ds.get(designator)
                 X_train, X_val = train_test_split(X_train, split_percentages=(2.0/3.0, 1.0/3.0))
 
-                if len(X_val) < lag*lag:
+                if len(X_val) <= lag_mapping[str(lag)]:
+                    print(designator, "is to short, skipping")
                     continue
-                x_val_big = _val_split(X_val, lag, lag*lag, use_torch=True)
+
+                x_val_big = _val_split(X_val, lag, lag_mapping[str(lag)], use_torch=True)
                 x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
                 x_val_small = x_val_small.unsqueeze(1)
 
                 X_test = X_test.float()
                 X_val = X_val.float()
-
-                model_a.load_state_dict(torch.load("models/{}_rnn.pth".format(ds_full_name)))
-                model_b.load_state_dict(torch.load("models/{}_cnn.pth".format(ds_full_name)))
-                model_c.load_state_dict(torch.load("models/{}_as01.pth".format(ds_full_name)))
-                model_d.load_state_dict(torch.load("models/{}_as02.pth".format(ds_full_name)))
-
-                models = [model_a, model_b, model_c, model_d]
-
-                run_comparison(models, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
+                run_comparison(models, None, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
 
         else:
             ds_full_name = d_name
@@ -150,7 +194,7 @@ def main(lag, ds_names=None, override=None):
         
             runtimes = run_comparison(models, runtimes, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
 
-    runtimes.to_csv("results/runtimes.csv")
+    runtimes.to_csv("results/runtimes_{}.csv".format(lag))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

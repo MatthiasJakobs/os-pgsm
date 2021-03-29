@@ -30,7 +30,7 @@ def simple_test_ranking(path):
 def main():
     # Run all "_test.csv" files and see if one of our methods is better than the baseline
 
-    paths = glob.glob("results/*_test.csv")
+    paths = glob.glob("results/*_lag5_test.csv")
     better = []
 
     for p in paths:
