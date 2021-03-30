@@ -7,6 +7,22 @@ from tsx.utils import to_numpy
 from tsx.visualizations import plot_cam
 from experiments import implemented_datasets, test_keys
 
+background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
+model_colors = [
+    "lightcoral",
+    "firebrick",
+    "darkred",
+    "lightgreen",
+    "limegreen",
+    "darkgreen",
+    "skyblue",
+    "royalblue",
+    "navy",
+    "orchid",
+    "mediumpurple",
+    "purple",
+]
+
 def compare_logs(log_a, log_b, mse_baseline=None, mae_baseline=None, smape_baseline=None):
 
     _, axes = plt.subplots(2, 2, figsize=(10, 6))

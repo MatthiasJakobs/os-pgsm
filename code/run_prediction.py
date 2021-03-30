@@ -5,6 +5,7 @@ import time
 import pandas as pd
 import glob
 
+from tqdm import tqdm, trange
 from main import evaluate_test
 from datasets import Jena_Climate, Bike_Total_Rents, Bike_Temperature, Bike_Registered, M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
 from compositors import GC_Large, GC_Large_Adaptive_Hoeffding, GC_Small, GC_Large_Euclidian, GC_Small_Euclidian, Baseline, BaseAdaptive
@@ -14,57 +15,65 @@ from csv import DictReader
 from os.path import exists
 from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit
 from tsx.models.forecaster import Simple_LSTM
+from tsx.metrics import smape
+from sklearn.metrics import mean_squared_error
 
-def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False):
+def rmse(a, b):
+    return mean_squared_error(a, b, squared=False)
 
-    def _run_and_save(t, comp, comp_name, x_val):
-        modified = False
-        if "pred_" + comp_name not in t.columns or comp_name in override:
-            if len(x_val.shape) == 1:
-                preds = comp.run(x_val, X_test, big_lag=lag_mapping[str(lag)])
-            else:
-                preds, _ = comp.run(x_val, X_test)
-            t["pred_" + comp_name] = np.squeeze(preds)
-            modified = True
+def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False, repeats=5, loss=smape):
+
+    def _run_and_save(comp, comp_name, x_val):
+        if len(x_val.shape) == 1:
+            preds = comp.run(x_val, X_test, big_lag=lag_mapping[str(lag)], verbose=False)
         else:
-            print("Compositor {} already ran, skipping".format(comp_name))
-        return modified, t
+            preds = comp.run(x_val, X_test)
+        #t["pred_" + comp_name] = np.squeeze(preds)
+        #return t
+        return preds
 
-    test_path = "results/{}_lag{}_test.csv".format(ds_name, lag)
-    val_path = "results/{}_lag{}_val.csv".format(ds_name, lag)
+    pd_val_best = pd.DataFrame(columns=["# y"])
+    pd_val_avg = pd.DataFrame(columns=["# y"])
+    pd_test_best = pd.DataFrame(columns=["# y"])
+    pd_test_avg = pd.DataFrame(columns=["# y"])
+    pd_val_best["# y"] = np.squeeze(X_val.numpy())
+    pd_val_avg["# y"] = np.squeeze(X_val.numpy())
+    pd_test_best["# y"] = np.squeeze(X_test.numpy())
+    pd_test_avg["# y"] = np.squeeze(X_test.numpy())
 
-    modified_single = False
+    # single models
+    for i, m in enumerate(tqdm(models)):
 
-    # Assume both or neither exists
-    if exists(test_path):
-        pd_val = pd.read_csv(val_path, delimiter=",")
-        pd_test = pd.read_csv(test_path, delimiter=",")
+        agg_test = np.zeros((repeats, len(X_test)))
+        agg_val = np.zeros((repeats, len(X_val)))
+        test_errors = np.zeros((repeats))
+        val_errors = np.zeros((repeats))
 
-    else:
-        pd_val = pd.DataFrame(columns=["# y"])
-        pd_test = pd.DataFrame(columns=["# y"])
-        pd_val["# y"] = np.squeeze(X_val.numpy())
-        pd_test["# y"] = np.squeeze(X_test.numpy())
+        for j in range(repeats):
+            before = time.time()
+            preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
+            after = time.time()
+            if runtimes is not None:
+                runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
 
-    for i, m in enumerate(models):
+            x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
+            preds_val = m.predict(x_val_small.unsqueeze(1).float())
+            preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
 
-        if "pred_" + model_names[i] in pd_val.columns and model_names[i] not in override:
-            print("skip {} because it already exists".format(model_names[i]))
-            continue
+            test_errors[j] = loss(X_test.numpy(), preds_test)
+            val_errors[j] = loss(X_val.numpy(), preds_val)
 
-        # meassure runtime
-        before = time.time()
-        preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
-        after = time.time()
-        if runtimes is not None:
-            runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
+            agg_test[j] = preds_test
+            agg_val[j] = preds_val
 
-        x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
-        preds_val = m.predict(x_val_small.unsqueeze(1).float())
-        preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
-        pd_val["pred_" + model_names[i]] = preds_val
-        pd_test["pred_" + model_names[i]] = preds_test
-        modified_single = True
+        test_best = np.argmin(test_errors)
+        val_best = np.argmin(val_errors)
+
+        pd_test_avg["pred_" + model_names[i]] = np.mean(agg_test, axis=0)
+        pd_val_avg["pred_" + model_names[i]] = np.mean(agg_val, axis=0)
+
+        pd_test_best["pred_" + model_names[i]] = agg_test[test_best]
+        pd_val_best["pred_" + model_names[i]] = agg_val[val_best]
     
     # remove unwanted models from compositions
     comp_models = []
@@ -75,21 +84,33 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
     models = comp_models
     start_idx = len(val_keys)
 
-    for idx in range(len(comp_names)):
-        c_idx = comps[idx](models, lag, lag_mapping[str(lag)])
+    # composite models
+    for idx in trange(len(comp_names)):
 
-        before = time.time()
-        if isinstance(c_idx, BaseAdaptive):
-            modified_comp, pd_test = _run_and_save(pd_test, c_idx, comp_names[idx], X_val)
-        else:
-            modified_comp, pd_test = _run_and_save(pd_test, c_idx, comp_names[idx], x_val_big)
-        after = time.time()
-        if modified_comp and runtimes is not None:
+        agg_test = np.zeros((repeats, len(X_test)))
+        test_errors = np.zeros(repeats)
+
+        for j in range(repeats):
+            c_idx = comps[idx](models, lag, lag_mapping[str(lag)])
+            before = time.time()
+            if isinstance(c_idx, BaseAdaptive):
+                preds = _run_and_save(c_idx, comp_names[idx], X_val)
+            else:
+                preds = _run_and_save(c_idx, comp_names[idx], x_val_big)
+            after = time.time()
+            agg_test[j] = preds
+            test_errors[j] = loss(X_test.numpy(), preds)
+
+        test_best = np.argmin(test_errors)
+        pd_test_best["pred_" + comp_names[idx]] = agg_test[test_best]
+        pd_test_avg["pred_" + comp_names[idx]] = np.mean(agg_test, axis=0)
+        if runtimes is not None:
             runtimes["pred_" + comp_names[idx]].loc[ds_name] = after-before
-
-    if modified_single or modified_comp:
-        pd_test.to_csv(test_path, index=False)
-        pd_val.to_csv(val_path, index=False)
+    
+    pd_test_best.to_csv("results/{}_lag{}_{}_test.csv".format(ds_name, lag, "best"), index=False)
+    pd_test_avg.to_csv("results/{}_lag{}_{}_test.csv".format(ds_name, lag, "avg"), index=False)
+    pd_val_best.to_csv("results/{}_lag{}_{}_val.csv".format(ds_name, lag, "best"), index=False)
+    pd_val_avg.to_csv("results/{}_lag{}_{}_val.csv".format(ds_name, lag, "avg"), index=False)
     return runtimes
 
 def _get_m4_ds(name):
@@ -140,13 +161,16 @@ def main(lag, ds_names=None, override=None):
     else:
         runtimes = pd.DataFrame(index=list(implemented_datasets.keys()), columns=test_keys[1:])
 
-    idx_range = list(range(1, 21))
 
     for d_ind, d_name in enumerate(dataset_names):
 
         # assume: m4_hourly, m4_weekly, m4_quaterly, m4_monthly etc.
         if d_name.startswith("m4"):
 
+            if d_name.startswith("m4_quaterly"):
+                idx_range = list(range(5, 21))
+            else:
+                idx_range = list(range(1, 21))
             ds = _get_m4_ds(d_name)()
             keys = ds.train_data.columns
             for idx in idx_range:
