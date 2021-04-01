@@ -1,8 +1,0 @@
-comp,total_runtime,per_mean,per_std
-baseline,0.0019683837890625,,
-gradcam_large,5.269050598144531e-05,,
-gradcam_small,4.935264587402344e-05,,
-gradcam_large_euclidian,4.744529724121094e-05,,
-gradcam_small_euclidian,4.6253204345703125e-05,,
-large_adaptive_hoeffding,7.867813110351562e-05,,
-large_adaptive_periodic,9.894371032714844e-05,,

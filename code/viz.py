@@ -92,7 +92,7 @@ def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, 
 
     background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
     bg_legends = [False] * len(model_names)
-    plt.figure()
+    plt.figure(figsize=(10, 4))
     for i in range(to_x-from_x):
         bg_color = background_colors[ranking[i]]
         if not bg_legends[ranking[i]]:
@@ -107,7 +107,7 @@ def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, 
     plt.xlabel("$t$")
     plt.ylabel("$y$")
     plt.xticks(np.arange(0, to_x-from_x, step=5), list(range(from_x, to_x, 5)), rotation=70)
-    plt.title("{} on {}".format(comp_name, ds_name))
+    #plt.title("{} on {}".format(comp_name, ds_name))
     plt.legend()
     plt.tight_layout()
     plt.savefig("plots/explainability/test_{}_{}.pdf".format(comp_name, ds_name))
