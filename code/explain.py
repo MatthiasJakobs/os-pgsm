@@ -27,14 +27,14 @@ def viz_roc_change(rocs1, rocs2, idx, name="roc_change"):
     max_length = max(max_length_1, max_length_2)
 
     ax1 = fig.add_subplot(1,2,1)
-    ax1.set_title(["$R^{" + str(w) + "}$ before drift" for w in range(12)][idx])
+    ax1.set_title(["$RoC^{" + str(w) + "}$ before drift" for w in range(12)][idx])
     ax1.get_xaxis().set_ticks(np.arange(max_length))
 
     for r in rocs1[idx]:
         ax1.plot(r, color=model_colors[idx], alpha=0.5)
 
     ax2 = fig.add_subplot(1,2,2)
-    ax2.set_title(["$R^{" + str(w) + "}$ after drift" for w in range(12)][idx])
+    ax2.set_title(["$RoC^{" + str(w) + "}$ after drift" for w in range(12)][idx])
     ax2.get_xaxis().set_ticks(np.arange(max_length))
 
     for r in rocs1[idx]:
@@ -47,14 +47,16 @@ def viz_roc_change(rocs1, rocs2, idx, name="roc_change"):
     plt.close(fig)
 
 def viz_rocs(comp, subset_indices=None, name="abnormal_viz_rocs"):
-    fig = plt.figure(figsize=(10,4))
+    fig = plt.figure(figsize=(10,2))
 
     if subset_indices is None:
         subset_indices = list(range(12))
-        rows = 2
-        cols = 6
+        rows = 1
+        cols = 12
     else:
         rows, cols = calc_optimal_grid(len(subset_indices))
+        rows = 1
+        cols = len(subset_indices)
 
     for n, i in enumerate(subset_indices):
         ax = fig.add_subplot(rows, cols, n+1)
@@ -151,10 +153,10 @@ def get_comp_abnormal(seed=0, lag=5, G=GC_Large):
         "single_names": single_names
     }
 
-def plot_viz_rocs():
+def plot_viz_rocs(subset_indices=None):
     res = get_comp_abnormal(lag=10)
     comp1 = res['comp']
-    viz_rocs(comp1)
+    viz_rocs(comp1, subset_indices=subset_indices)
 
 def plot_rocs_change():
     res = get_comp_abnormal(lag=10, G=GC_Large_Adaptive_Hoeffding)
@@ -192,7 +194,7 @@ def plot_compositor_selection_cc(offset=0, seed=0, lag=5, best=11, name="composi
             print("model {}:".format(i), l)
 
     x = np.squeeze(x_input)
-    fig = plt.figure(figsize=(10,4))
+    fig = plt.figure(figsize=(10,3))
     ax1 = fig.add_subplot(1, 2, 1)
     ax1.plot(offset + np.arange(len(x)), x, "k")
     ax1.plot(offset + np.array([len(x) - 1, len(x)]), [x[-1], y_output], "g-.", label="Ground truth")
@@ -257,7 +259,8 @@ def plot_compositor_selection_11(offset=0, seed=0, lag=5, best=11, name="composi
     fig.savefig("plots/explainability/{}.pdf".format(name))
     plt.close(fig)
 
-#plot_rocs_change()
+plot_rocs_change()
+#plot_viz_rocs(subset_indices=[0, 1, 2, 4, 5, 7, 8, 10])
 #plot_compositor_selection_cc(offset=3, best=11, name="compositor_cc_offset3")
 #plot_compositor_selection_cc(offset=4, best=11, name="compositor_cc_offset4")
 #plot_compositor_test([100, 150], limit_models=[0, 8])
