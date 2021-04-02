@@ -78,9 +78,12 @@ def plot_test_preds(preds, labels, scores, x_test, name, first_n=30):
     plt.tight_layout()
     plt.savefig("plots/{}.pdf".format(name))
 
-def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, comp_name, lag):
+def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, comp_name, lag, limit_models=None):
     from_x = x_range[0]
     to_x = x_range[1]
+
+    if limit_models is None:
+        limit_models = list(range(12))
 
     x_test = x_test[lag:]
     preds = preds[lag:]
@@ -90,16 +93,18 @@ def plot_compositor_results(comp, x_range, preds, x_test, model_names, ds_name, 
     ranking = comp.test_forecasters[from_x:to_x]
     #assert len(np.unique(ranking)) <= 4
 
-    background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
+    #background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
+    background_colors = model_colors
     bg_legends = [False] * len(model_names)
     plt.figure(figsize=(10, 4))
     for i in range(to_x-from_x):
-        bg_color = background_colors[ranking[i]]
-        if not bg_legends[ranking[i]]:
-            plt.axvspan(i-0.5, i+0.5, facecolor=bg_color, alpha=0.3, label=model_names[ranking[i]])
-            bg_legends[ranking[i]] = True
-        else:
-            plt.axvspan(i-0.5, i+0.5, facecolor=bg_color, alpha=0.3)
+        if ranking[i] in limit_models:
+            bg_color = background_colors[ranking[i]]
+            if not bg_legends[ranking[i]]:
+                plt.axvspan(i-0.5, i+0.5, facecolor=bg_color, alpha=0.3, label=model_names[ranking[i]])
+                bg_legends[ranking[i]] = True
+            else:
+                plt.axvspan(i-0.5, i+0.5, facecolor=bg_color, alpha=0.3)
 
     plt.plot(x_test, color="dimgray", label="$x_{test}$")
     plt.plot(preds, color="crimson", label="prediction")

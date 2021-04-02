@@ -181,6 +181,7 @@ class BaseAdaptive(BaseCompositor):
     def __init__(self, models, lag, big_lag, val_selection="sliding"):
         super().__init__(models, lag, big_lag)
         self.val_selection = val_selection
+        self.roc_history = []
 
     def rebuild(self, X):
         self.rocs = [ [] for _ in range(len(self.models))]
@@ -254,6 +255,7 @@ class BaseAdaptive(BaseCompositor):
                     #x_val, _ = equal_split(current_val, big_lag, use_torch=True)
                     residuals = []
                     means = [torch.mean(current_val).numpy()]
+                    self.roc_history.append(self.rocs)
                     if not dry_run:
                         self.rebuild(current_val)
 
