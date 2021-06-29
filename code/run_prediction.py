@@ -12,7 +12,7 @@ from datasets.utils import windowing, train_test_split, _apply_window, sliding_s
 from collections import defaultdict
 from csv import DictReader
 from os.path import exists
-from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit
+from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit, m4_data_path
 from tsx.models.forecaster import Simple_LSTM
 from tsx.metrics import smape
 from sklearn.metrics import mean_squared_error
@@ -185,7 +185,7 @@ def main(lag, ds_names=None, override=None):
                 idx_range = list(range(5, 21))
             else:
                 idx_range = list(range(1, 21))
-            ds = _get_m4_ds(d_name)()
+            ds = _get_m4_ds(d_name)(path=m4_data_path)
             keys = ds.train_data.columns
             for idx in idx_range:
                 # get all trained single models (some models will not train because the lag is too small)
