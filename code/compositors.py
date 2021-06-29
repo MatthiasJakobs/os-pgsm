@@ -3,7 +3,7 @@ import numpy as np
 import time
 
 from tqdm import trange, tqdm
-from utils import simple_gradcam, stupid_gradcam
+from utils import gradcam
 from datasets.utils import sliding_split, equal_split
 from tsx.metrics import smape
 from tsx.attribution import Grad_CAM
@@ -79,7 +79,7 @@ class BaseCompositor:
         assert len(losses) == len(self.models)
         return np.argmin(losses)
 
-class GC_Large(BaseCompositor):
+class OS_PGSM_St(BaseCompositor):
 
     def __init__(self, models, lag, big_lag, threshold=0.5):
         super().__init__(models, lag, big_lag)
@@ -105,7 +105,7 @@ class GC_Large(BaseCompositor):
                 logits = res['logits'].squeeze()
                 feats = res['feats']
                 l = smape(logits, y[idx])
-                r = stupid_gradcam(l, feats)
+                r = gradcam(l, feats)
                 cams[n_m, idx] = r
                 losses[n_m] += l.detach().item()
 
@@ -274,7 +274,7 @@ class BaseAdaptive(BaseCompositor):
         else:
             return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
-class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
+class OS_PGSM_Per(OS_PGSM_St, BaseAdaptive):
 
     def __init__(self, models, lag, big_lag, threshold=0.5, periodicity=None, val_selection="sliding"):
         super().__init__(models, lag, big_lag, threshold=threshold)
@@ -290,31 +290,7 @@ class GC_Large_Adaptive_Periodic(GC_Large, BaseAdaptive):
     def detect_concept_drift(self, residuals, x_len):
         return len(residuals) >= self.periodicity
 
-# class GC_Large_Adaptive_PageHinkley(GC_Large, BaseAdaptive):
-
-#     def __init__(self, models, lag, big_lag, threshold=0.5, lamb=0.2, delta=0.01):
-#         super().__init__(models, lag, big_lag, threshold=threshold)
-#         self.lamb = lamb
-#         self.delta = delta
-
-#     def detect_concept_drift(self, residuals):
-#         sr = np.zeros_like(residuals)
-#         m_t = np.zeros_like(residuals)
-#         M_T = 1
-#         for i in range(1, len(residuals)):
-#             x_i = residuals[:i]
-#             mean_upto_t = np.mean(x_i)
-
-#             sr[i] = sr[i-1] + residuals[i]
-#             m_t[i] = m_t[i-1] + residuals[i] + sr[i] - self.delta
-#             M_T = min(M_T, m_t[i])
-
-#         if m_t[-1] - M_T >= self.lamb:
-#             return True
-#         else:
-#             return False
-
-class GC_Large_Adaptive_Hoeffding(GC_Large, BaseAdaptive):
+class OS_PGSM(OS_PGSM_St, BaseAdaptive):
     def __init__(self, models, lag, big_lag, threshold=0.5, val_selection="sliding", delta=0.95):
         super().__init__(models, lag, big_lag, threshold=threshold)
         self.delta = delta
@@ -335,7 +311,7 @@ class GC_Large_Adaptive_Hoeffding(GC_Large, BaseAdaptive):
         else:
             return True
 
-class Baseline(BaseCompositor):
+class KNN_ROC(BaseCompositor):
 
     def __init__(self, models, lag, big_lag):
         super().__init__(models, lag, big_lag)
@@ -355,7 +331,6 @@ class Baseline(BaseCompositor):
         return losses.numpy(), None
 
     def calculate_rocs(self, x, cams, best_model):
-        #X, y = equal_split(x_val, self.lag, use_torch=True)
         self.knn_x.append(x)
         self.knn_y.append(best_model)
         return None
@@ -368,13 +343,13 @@ class Baseline(BaseCompositor):
     def find_best_forecaster(self, x):
         return self.knn.predict(x)[0]
 
-class GC_Small(GC_Large):
+class OS_PGSM_Int(OS_PGSM_St):
 
     def small_split(self, X):
         return equal_split(X, self.lag, use_torch=True)
 
     
-class GC_Large_Euclidian(GC_Large):
+class OS_PGSM_Euc(OS_PGSM_St):
 
     def calculate_rocs(self, x_val, cams, best_model): 
 
@@ -413,7 +388,7 @@ class GC_Large_Euclidian(GC_Large):
 
         return best_model
 
-class GC_Small_Euclidian(GC_Large_Euclidian, GC_Small):
+class OS_PGSM_Int_Euc(OS_PGSM_Euc, OS_PGSM_Int):
 
     def __init__(self, models, lag, big_lag, threshold=0.5):
         super().__init__(models, lag, big_lag, threshold=threshold)

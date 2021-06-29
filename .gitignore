@@ -2,3 +2,4 @@ launch.json
 .vscode
 test.py
 *.pyc
+results_*.zip

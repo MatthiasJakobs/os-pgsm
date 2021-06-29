@@ -19,7 +19,7 @@ ds_subset = [
     "m4_hourly_H3",
 ]
 
-def main():
+def measure_runtime():
     for lag in [5, 10, 15]:
         for ds_full_name in ds_subset:
             models = []
@@ -68,5 +68,29 @@ def main():
             result_name = "results/runtimes/{}_lag{}.csv".format(ds_full_name, lag)
             df.to_csv(result_name, index_label="comp")
 
+def show_results():
+    for lag in [5, 10, 15]:
+        total = np.zeros((7, 10))
+        per_step = np.zeros((7, 10))
+
+        for i, d_name in enumerate(ds_subset):
+            df = pd.read_csv("results/runtimes/{}_lag{}.csv".format(d_name, lag), index_col=0)
+            for j, c_name in enumerate(comp_names):
+                total[j, i] = df.loc[c_name]['total_runtime']
+                per_step[j, i] = df.loc[c_name]['per_mean']
+
+        total_mean = np.mean(total, axis=1)
+        total_std = np.std(total, axis=1)
+        per_mean = np.mean(per_step, axis=1)
+        per_std = np.std(per_step, axis=1)
+
+        rounding=2
+        print(lag, np.round(total_mean, rounding))
+        print(lag, np.round(total_std, rounding))
+        print(lag, np.round(per_mean, 2*rounding))
+        print(lag, np.round(per_std, 2*rounding))
+        print("*"*50)
+
 if __name__ == "__main__":
-    main()
+    measure_runtime()
+    show_results()

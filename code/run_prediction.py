@@ -6,9 +6,8 @@ import pandas as pd
 import glob
 
 from tqdm import tqdm, trange
-from main import evaluate_test
 from datasets import Jena_Climate, Bike_Total_Rents, Bike_Temperature, Bike_Registered, M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
-from compositors import GC_Large, GC_Large_Adaptive_Hoeffding, GC_Small, GC_Large_Euclidian, GC_Small_Euclidian, Baseline, BaseAdaptive
+from compositors import *
 from datasets.utils import windowing, train_test_split, _apply_window, sliding_split, _val_split
 from collections import defaultdict
 from csv import DictReader
@@ -17,6 +16,23 @@ from experiments import single_models, implemented_datasets, lag_mapping, load_m
 from tsx.models.forecaster import Simple_LSTM
 from tsx.metrics import smape
 from sklearn.metrics import mean_squared_error
+
+def evaluate_test(model, x_test, reuse_predictions=False, lag=5):
+    predictions = np.zeros_like(x_test)
+
+    x = x_test[:lag]
+    predictions[:lag] = x
+
+    for x_i in range(lag, len(x_test)):
+        if reuse_predictions:
+            x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
+        else:
+            x = x_test[x_i-lag:x_i].unsqueeze(0)
+
+        predictions[x_i] = np.squeeze(model.predict(x.unsqueeze(0)))
+        
+    error = smape(x_test.numpy(), predictions)
+    return predictions, error
 
 def rmse(a, b):
     return mean_squared_error(a, b, squared=False)
@@ -28,8 +44,6 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
             preds = comp.run(x_val, X_test, big_lag=lag_mapping[str(lag)], verbose=False)
         else:
             preds = comp.run(x_val, X_test)
-        #t["pred_" + comp_name] = np.squeeze(preds)
-        #return t
         return preds
 
     pd_val_best = pd.DataFrame(columns=["# y"])

@@ -6,7 +6,7 @@ from adaptive_mixtures import AdaptiveMixForecaster
 
 skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
 
-comps =                [Baseline,   GC_Large,        GC_Small,        GC_Large_Euclidian,        GC_Small_Euclidian,        GC_Large_Adaptive_Hoeffding, GC_Large_Adaptive_Periodic]
+comps =                [KNN_ROC,    OS_PGSM_St,      OS_PGSM_Int,     OS_PGSM_Euc,               OS_PGSM_Int_Euc,           OS_PGSM,                    OS_PGSM_Per]
 comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
 
 def load_model(m_name, d_name, lag, ts_length):

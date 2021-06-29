@@ -11,6 +11,7 @@ from os.path import exists
 
 def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name, nr_filters, batch_size, epochs, hidden_states, learning_rate, save_plot=False, verbose=True):
         save_path = "models/{}/{}_lag{}.pth".format(model_name, ds_name, lag)
+        print(f"Start training {save_path}")
         if not exists(save_path):
             model_instances = []
             model_logs = []
@@ -42,9 +43,6 @@ def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name,
             best = model_bests[nearest_model_idx]
 
             model_instances[nearest_model_idx].save(save_path)
-
-            if save_plot:
-                plot_train_log(logs, "plots/train_{}_{}.pdf".format(ds_name, model_name), best_epoch=best)
         else:
             print("{} already trained, skip".format(save_path))
 
@@ -67,8 +65,6 @@ def train_m4_subset(lag=5):
             x_val, y_val = _apply_window(ds_val, lag)
 
             for m_name, model_obj in single_models.items():
-                # if "adaptive" in m_name or "lstm" in m_name:
-                #     continue
                 model = model_obj["obj"]
                 nr_filters = model_obj["nr_filters"]
                 hidden_states = model_obj["hidden_states"]
