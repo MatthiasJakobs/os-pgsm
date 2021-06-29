@@ -3,8 +3,7 @@ import numpy as np
 import argparse
 
 from datasets.utils import windowing, _apply_window, train_test_split
-from viz import plot_train_log
-from experiments import single_models, implemented_datasets, lag_mapping
+from experiments import single_models, implemented_datasets, lag_mapping, m4_data_path
 from datasets import M4_Hourly, M4_Daily, M4_Monthly, M4_Weekly, M4_Quaterly, M4_Yearly
 from os.path import exists
 
@@ -46,9 +45,9 @@ def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name,
         else:
             print("{} already trained, skip".format(save_path))
 
-def train_m4_subset(lag=5):
+def train_m4_subset(path, lag=5):
     name_list = ['hourly', 'weekly', 'quaterly', 'daily', 'monthly']
-    ds_list = [ M4_Hourly(), M4_Weekly(), M4_Quaterly(), M4_Daily(), M4_Monthly()]
+    ds_list = [ M4_Hourly(path=path), M4_Weekly(path=path), M4_Quaterly(path=path), M4_Daily(path=path), M4_Monthly(path=path)]
 
     for name, ds in zip(name_list, ds_list):
         indices = list(range(20))
@@ -83,7 +82,7 @@ def main(lag, ds_name=None, model_name=None):
 
     if ds_name is not None:
         if ds_name == "M4":
-            train_m4_subset(lag=lag)
+            train_m4_subset(lag=lag, path=m4_data_path)
             return 
         else:
             use_ds = [ds_name]

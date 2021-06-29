@@ -1,8 +1,13 @@
 # Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting
 
-Code accompanying the ECML2021 research track submission 599 titled "Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting"
+Code accompanying the ECML2021 research track submission 599 titled *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*
+
+## M4 dataset
+You have to download the M4 dataset manually and specify its path in `code/experiments.py` under `m4_data_path`.
 
 ## Install requirements
+
+Tested with `python==3.7`.
 
 `pip install git+https://github.com/MatthiasJakobs/tsx.git@ecml2021`
 
@@ -13,6 +18,7 @@ Code accompanying the ECML2021 research track submission 599 titled "Explainable
 - `code/train_models.py` trains the single models
     - The status of which models have already been trained can be monitored using `check_train_complete.py`
     - Example: `python code/train_models.py --dataset AbnormalHeartbeat --lag 10 --model rnn_a`
+    - To train the `M4` datasets, use `--dataset M4`
 - `code/run_prediction.py` runs **PGSM** using the single models on all datasets
     - The results of `code/run_prediction.py` are stored in `results/`
     - The status of which results have already been created can be monitored using `check_pred_complete.py`

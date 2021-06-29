@@ -9,6 +9,8 @@ skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
 comps =                [KNN_ROC,    OS_PGSM_St,      OS_PGSM_Int,     OS_PGSM_Euc,               OS_PGSM_Int_Euc,           OS_PGSM,                    OS_PGSM_Per]
 comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
 
+m4_data_path = "/data/M4"
+
 def load_model(m_name, d_name, lag, ts_length):
     m_obj = single_models[m_name]
 
