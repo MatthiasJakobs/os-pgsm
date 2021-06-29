@@ -21,7 +21,7 @@ def main(m4=False, lags=None):
     for lag in lags:
         print("---- MISSING LAG {} ----".format(lag))
         for ds_name in all_datasets:
-            composite = "results/{}_lag{}_test.csv".format(ds_name, lag)
+            composite = "results/{}_lag{}_avg_test.csv".format(ds_name, lag)
             if composite not in all_models:
                 print("missing:", composite)
 

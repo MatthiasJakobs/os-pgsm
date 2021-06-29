@@ -2,8 +2,8 @@
 
 Code accompanying the ECML2021 research track submission 599 titled *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*
 
-## M4 dataset
-You have to download the M4 dataset manually and specify its path in `code/experiments.py` under `m4_data_path`.
+## Datasets
+You have to download the M4 dataset manually and specify its path in `code/experiments.py` under `m4_data_path`. All other datasets should download automatically.
 
 ## Install requirements
 
@@ -22,7 +22,11 @@ Tested with `python==3.7`.
 - `code/run_prediction.py` runs **PGSM** using the single models on all datasets
     - The results of `code/run_prediction.py` are stored in `results/`
     - The status of which results have already been created can be monitored using `check_pred_complete.py`
-    - Example: `python code/run_prediction.py --lag 10`
+    - Examples: 
+
+        `python code/run_prediction.py --lag 10`
+
+        `python code/run_prediction.py --dataset m4_daily --lag 5`
 - `code/measure_runtime.py` creates the runtime experiment and prints the results to the terminal.
 - To generate all plots used in the paper, run `code/explain.py` after all experiments are finished.
 - Using the R files in `EA-DRL-rep.zip`, the predictions can be compared to state-of-the-art methods as presented in the experiment section of our paper
