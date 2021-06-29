@@ -1,4 +1,4 @@
-# Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting
+# OS-PGSM
 
 Code accompanying the ECML2021 research track submission 599 titled *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*
 
