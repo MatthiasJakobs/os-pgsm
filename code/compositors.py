@@ -348,7 +348,6 @@ class OS_PGSM_Int(OS_PGSM_St):
     def small_split(self, X):
         return equal_split(X, self.lag, use_torch=True)
 
-    
 class OS_PGSM_Euc(OS_PGSM_St):
 
     def calculate_rocs(self, x_val, cams, best_model): 
