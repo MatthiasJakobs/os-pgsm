@@ -29,4 +29,3 @@ Tested with `python==3.7`.
         `python code/run_prediction.py --dataset m4_daily --lag 5`
 - `code/measure_runtime.py` creates the runtime experiment and prints the results to the terminal.
 - To generate all plots used in the paper, run `code/explain.py` after all experiments are finished.
-- Using the R files in `EA-DRL-rep.zip`, the predictions can be compared to state-of-the-art methods as presented in the experiment section of our paper
