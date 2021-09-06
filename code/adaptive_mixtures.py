@@ -4,7 +4,6 @@ import numpy as np
 
 from datasets import Bike_Total_Rents
 from datasets.utils import train_test_split, sliding_split
-from tsx.metrics import smape
 
 class AdaptiveMixForecaster(nn.Module):
 

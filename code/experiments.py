@@ -1,6 +1,6 @@
 import torch
 from datasets import *
-from tsx.models.forecaster import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, Simple_LSTM
+from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
 from compositors import *
 from adaptive_mixtures import AdaptiveMixForecaster
 
@@ -64,6 +64,21 @@ single_models = {
         "nr_filters": 128,
         "hidden_states": 10
     },
+    "rnn_d" : {
+        "obj": Shallow_CNN_RNN,
+        "nr_filters": 32,
+        "hidden_states": 100
+    },
+    "rnn_e" : {
+        "obj": Shallow_CNN_RNN,
+        "nr_filters": 64,
+        "hidden_states": 100
+    },
+    "rnn_f" : {
+        "obj": Shallow_CNN_RNN,
+        "nr_filters": 128,
+        "hidden_states": 100
+    },
     "cnn_a" : {
         "obj": Shallow_FCN,
         "nr_filters": 32,
@@ -94,6 +109,21 @@ single_models = {
         "nr_filters": 128,
         "hidden_states": 10
     },
+    "as01_d" : {
+        "obj": AS_LSTM_01,
+        "nr_filters": 32,
+        "hidden_states": 100
+    },
+    "as01_e" : {
+        "obj": AS_LSTM_01,
+        "nr_filters": 64,
+        "hidden_states": 100
+    },
+    "as01_f" : {
+        "obj": AS_LSTM_01,
+        "nr_filters": 128,
+        "hidden_states": 100
+    },
     "as02_a" : {
         "obj": AS_LSTM_02,
         "nr_filters": 32,
@@ -106,6 +136,81 @@ single_models = {
     },
     "as02_c" : {
         "obj": AS_LSTM_02,
+        "nr_filters": 128,
+        "hidden_states": 10
+    },
+    "as02_d" : {
+        "obj": AS_LSTM_02,
+        "nr_filters": 32,
+        "hidden_states": 100
+    },
+    "as02_e" : {
+        "obj": AS_LSTM_02,
+        "nr_filters": 64,
+        "hidden_states": 100
+    },
+    "as02_f" : {
+        "obj": AS_LSTM_02,
+        "nr_filters": 128,
+        "hidden_states": 100
+    },
+    "as03_a" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 32,
+        "hidden_states": 10
+    },
+    "as03_b" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 64,
+        "hidden_states": 10
+    },
+    "as03_c" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 128,
+        "hidden_states": 10
+    },
+    "as03_d" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 32,
+        "hidden_states": 100
+    },
+    "as03_e" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 64,
+        "hidden_states": 100
+    },
+    "as03_f" : {
+        "obj": AS_LSTM_03,
+        "nr_filters": 128,
+        "hidden_states": 100
+    },
+    "one_residual_a" : {
+        "obj": OneResidualFCN,
+        "nr_filters": 32,
+        "hidden_states": 10
+    },
+    "one_residual_b" : {
+        "obj": OneResidualFCN,
+        "nr_filters": 64,
+        "hidden_states": 10
+    },
+    "one_residual_c" : {
+        "obj": OneResidualFCN,
+        "nr_filters": 128,
+        "hidden_states": 10
+    },
+    "two_residual_a" : {
+        "obj": TwoResidualFCN,
+        "nr_filters": 32,
+        "hidden_states": 10
+    },
+    "two_residual_b" : {
+        "obj": TwoResidualFCN,
+        "nr_filters": 64,
+        "hidden_states": 10
+    },
+    "two_residual_c" : {
+        "obj": TwoResidualFCN,
         "nr_filters": 128,
         "hidden_states": 10
     },

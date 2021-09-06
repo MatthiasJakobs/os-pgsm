@@ -13,8 +13,7 @@ from collections import defaultdict
 from csv import DictReader
 from os.path import exists
 from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit, m4_data_path
-from tsx.models.forecaster import Simple_LSTM
-from tsx.metrics import smape
+from utils import smape
 from sklearn.metrics import mean_squared_error
 
 def evaluate_test(model, x_test, reuse_predictions=False, lag=5):

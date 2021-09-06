@@ -3,12 +3,13 @@ import numpy as np
 import time
 
 from tqdm import trange, tqdm
+from tslearn import clustering
 from utils import gradcam
 from datasets.utils import sliding_split, equal_split
-from tsx.metrics import smape
-from tsx.attribution import Grad_CAM
-from tsx.distances import dtw
+from utils import smape, dtw
 from sklearn.neighbors import KNeighborsClassifier
+from tslearn.clustering import TimeSeriesKMeans
+from tslearn.utils import to_time_series_dataset
 
 class BaseCompositor:
 
@@ -17,6 +18,12 @@ class BaseCompositor:
         # Assume identical lag for all modules no. Easily changable
         self.lag = lag
         self.big_lag = big_lag
+        self.topm = 1
+        self.nr_clusters_single = 1 # Default value: No clustering
+        self.nr_clusters_ensemble = 1 # Default value: No clustering
+
+        if self.topm != 1 and self.nr_clusters_ensemble != 1:
+            assert self.nr_clusters_ensemble < self.topm
 
     def calculate_rocs(self, x, losses, best_model):
         raise NotImplementedError()
@@ -27,15 +34,39 @@ class BaseCompositor:
     def split_val(self, X):
         raise NotImplementedError()
 
+    def shrink_rocs(self):
+        # Make RoCs more concise by considering cluster centers instead of all RoCs
+        if self.nr_clusters_single > 1:
+            for i, single_roc in enumerate(self.rocs): 
+
+                # Skip clustering if there would be no shrinking anyway
+                if len(single_roc) <= self.nr_clusters_single:
+                    continue
+
+                tslearn_formatted = to_time_series_dataset(single_roc)
+                km = TimeSeriesKMeans(n_clusters=self.nr_clusters_single, metric="dtw")
+                km.fit(tslearn_formatted)
+
+                # Choose cluster centers as new RoCs
+                new_roc = km.cluster_centers_.squeeze()
+                self.rocs[i] = []
+                for roc in new_roc:
+                    self.rocs[i].append(torch.tensor(roc).float())
+
     def run(self, X_val, X_test, reuse_prediction=False, verbose=True, report_runtime=False):
         self.rocs = [ [] for _ in range(len(self.models))]
         x_c, y_c = self.split_val(X_val)
+
+        # Create RoCs
         for x, y in zip(x_c, y_c):
             losses, cams = self.evaluate_on_validation(x, y) # Return-shapes: n_models, (n_models, blag-lag, lag)
             best_model = self.compute_ranking(losses) # Return: int [0, n_models]
             rocs_i = self.calculate_rocs(x, cams, best_model) # Return: List of vectors
             if rocs_i is not None:
                 self.rocs[best_model].extend(rocs_i)
+
+        self.shrink_rocs()        
+
         if report_runtime:
             before_total = time.time()
             preds, runtimes_per_decision = self.forecast_on_test(X_test, reuse_prediction, report_runtime=True)
@@ -44,8 +75,39 @@ class BaseCompositor:
 
             return preds, runtime_total, runtimes_per_decision
 
-        preds = self.forecast_on_test(X_test, reuse_prediction)
+        preds = self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
         return preds
+
+    def reduce_best_m(self, best_models):
+        if self.nr_clusters_ensemble == 1:
+            return best_models
+
+        reduced_best_models = [] # Aggregator for best models after reduction
+
+        all_roc_points = [item for sublist in self.rocs for item in sublist]
+
+        # Cluster into the desired number of left-over models.
+        tslearn_formatted = to_time_series_dataset(all_roc_points)
+        km = TimeSeriesKMeans(n_clusters=self.nr_clusters_ensemble, metric="dtw")
+        km.fit(tslearn_formatted)
+
+        cluster_centers = km.cluster_centers_.squeeze()
+
+        # The models with the closest mean distance to each cluster center
+        # will be chosen
+        for ccenter in cluster_centers:
+            distances = np.zeros(len(best_models))
+            for i, model in enumerate(best_models):
+                roc = self.rocs[model]
+                mean_d = np.mean([dtw(a, ccenter) for a in roc])
+                distances[i] = mean_d
+
+            reduced_best_models.append(best_models[np.argmin(distances)])
+
+        reduced_best_models = list(set(reduced_best_models)) # Remove duplicates
+
+        return reduced_best_models
+        
 
     # TODO: Make faster
     def forecast_on_test(self, x_test, reuse_prediction=False, report_runtime=False):
@@ -64,9 +126,17 @@ class BaseCompositor:
                 x = x_test[x_i-self.lag:x_i].unsqueeze(0)
 
             before_rt = time.time()
-            best_model = self.find_best_forecaster(x)
-            self.test_forecasters.append(best_model)
-            predictions[x_i] = self.models[best_model].predict(x.unsqueeze(0))
+            best_models = self.find_best_forecaster(x)
+
+            # Further reduce number of best models by clustering
+            best_models = self.reduce_best_m(best_models)
+
+            self.test_forecasters.append(best_models)
+            for i in range(len(best_models)):
+                predictions[x_i] += self.models[best_models[i]].predict(x.unsqueeze(0))
+
+            predictions[x_i] = predictions[x_i] / len(best_models)
+
             after_rt = time.time()
             runtimes.append(after_rt - before_rt)
 
@@ -156,25 +226,20 @@ class OS_PGSM_St(BaseCompositor):
         return rocs
 
     def find_best_forecaster(self, x, return_closest_roc=False):
-        best_model = -1
-        closest_roc = None
-        best_indice = None
-        smallest_distance = 1e8
+        assert return_closest_roc == False # TODO: Not implemented
+
+        model_distances = np.ones(len(self.models)) * 1e10
 
         for i, m in enumerate(self.models):
 
             x = x.squeeze()
             for r in self.rocs[i]:
                 distance = dtw(r, x)
-                if distance < smallest_distance:
-                    best_model = i
-                    smallest_distance = distance
-                    closest_roc = r
+                if distance < model_distances[i]:
+                    model_distances[i] = distance
 
-        if return_closest_roc:
-            return best_model, closest_roc
-        else:
-            return best_model
+        top_models = np.argsort(model_distances)[:self.topm]
+        return top_models
 
 class BaseAdaptive(BaseCompositor):
 
@@ -225,6 +290,7 @@ class BaseAdaptive(BaseCompositor):
         # Initial creation of ROCs
         #x_val, _ = equal_split(current_val, big_lag, use_torch=True)
         self.rebuild(current_val)
+        self.shrink_rocs()
         self.test_forecasters = []
 
         means.append(torch.mean(current_val).numpy())
@@ -258,6 +324,7 @@ class BaseAdaptive(BaseCompositor):
                     self.roc_history.append(self.rocs)
                     if not dry_run:
                         self.rebuild(current_val)
+                        self.shrink_rocs()
 
             before_single = time.time()
             best_model = self.find_best_forecaster(x)

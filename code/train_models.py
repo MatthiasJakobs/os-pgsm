@@ -1,6 +1,7 @@
 import torch 
 import numpy as np
 import argparse
+import hashlib
 
 from datasets.utils import windowing, _apply_window, train_test_split
 from experiments import single_models, implemented_datasets, lag_mapping, m4_data_path
@@ -12,6 +13,11 @@ def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name,
         save_path = "models/{}/{}_lag{}.pth".format(model_name, ds_name, lag)
         print(f"Start training {save_path}")
         if not exists(save_path):
+            # Set seed according to model name
+            config_seed = int(hashlib.md5((model_name+ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
+            print(config_seed)
+            torch.manual_seed(config_seed)
+
             model_instances = []
             model_logs = []
             model_scores = []

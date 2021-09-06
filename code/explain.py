@@ -5,8 +5,7 @@ import matplotlib.pyplot as plt
 from experiments import *
 from compositors import *
 from datasets.utils import windowing
-from tsx.visualizations import calc_optimal_grid
-from tsx.metrics import smape
+from utils import smape, calc_optimal_grid
 
 background_colors = ["cornflowerblue", "violet", "moccasin", "palegreen", "limegreen", "teal", "lime", "orange", "mediumorchid", "yellow", "lightgray", "darkturquoise"]
 model_colors = [
@@ -95,10 +94,10 @@ def viz_rocs(comp, subset_indices=None, name="abnormal_viz_rocs"):
         rows = 2
         cols = 6
     else:
-        fig = plt.figure(figsize=(10,2))
+        fig = plt.figure(figsize=(4,10))
         rows, cols = calc_optimal_grid(len(subset_indices))
-        rows = 1
-        cols = len(subset_indices)
+        rows = 4
+        cols = 2
 
     for n, i in enumerate(subset_indices):
         ax = fig.add_subplot(rows, cols, n+1)
@@ -248,8 +247,8 @@ def plot_compositor_selection_cc(offset=0, seed=0, lag=5, best=11, name="composi
             print("model {}:".format(i), l)
 
     x = np.squeeze(x_input)
-    fig = plt.figure(figsize=(10,3))
-    ax1 = fig.add_subplot(1, 2, 1)
+    fig = plt.figure(figsize=(5,10))
+    ax1 = fig.add_subplot(2, 1, 1)
     ax1.plot(offset + np.arange(len(x)), x, "k")
     ax1.plot(offset + np.array([len(x) - 1, len(x)]), [x[-1], y_output], "g-.", label="Ground truth")
     ax1.plot(offset + np.array([len(x) - 1, len(x)]), [x[-1], best_prediction], "r--", label="Prediction")
@@ -258,7 +257,7 @@ def plot_compositor_selection_cc(offset=0, seed=0, lag=5, best=11, name="composi
     ax1.set_ylabel("$y$")
     ax1.set_xlabel("$t$")
 
-    ax2 = fig.add_subplot(1, 2, 2)
+    ax2 = fig.add_subplot(2, 1, 2)
     ax2.plot(r)
     ax2.get_xaxis().set_ticks(np.arange(len(r)))
     ax2.set_title("Closest time-series in ROC of $C_{" + str(best) + "}$")
