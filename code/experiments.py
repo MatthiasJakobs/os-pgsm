@@ -6,8 +6,8 @@ from adaptive_mixtures import AdaptiveMixForecaster
 
 skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
 
-comps =                [KNN_ROC,    OS_PGSM_St,      OS_PGSM_Int,     OS_PGSM_Euc,               OS_PGSM_Int_Euc,           OS_PGSM,                    OS_PGSM_Per]
-comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
+# comps =                [KNN_ROC,    OS_PGSM_St,      OS_PGSM_Int,     OS_PGSM_Euc,               OS_PGSM_Int_Euc,           OS_PGSM,                    OS_PGSM_Per]
+# comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
 
 m4_data_path = "/data/M4"
 
@@ -39,7 +39,7 @@ def load_model(m_name, d_name, lag, ts_length):
 
     if "lstm" in m_name or "adaptive_mixture" in m_name:
         m = m_obj['obj'](lag, batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
-    elif "cnn" in m_name:
+    elif "cnn" in m_name or "residual" in m_name:
         m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, learning_rate=lr)
     else:
         m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
@@ -361,11 +361,86 @@ implemented_datasets = {
     },
 }
 
+# val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
+# test_keys = val_keys + ['pred_' + w for w in comp_names]
+
 lag_mapping = {
-    "5": 25,
+     "5": 25,
     "10": 40,
     "15": 60,
 }
 
-val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
-test_keys = val_keys + ['pred_' + w for w in comp_names]
+###
+# k: Number of lagged values
+# omega: Size of validation set (in percent)
+# n_omega: Length of RoC
+# z: Number of steps
+# delta: Hoeffding bound threshold
+# topm: Choose the best m models for ensembling
+# nr_clusters_single: Number of desired clusters inside each single model
+# nr_clusters_ensemble: Number of desired clusters over all ensembles
+# concept_drift_detection: ["periodic", "hoeffding", None]
+###
+def ospgsm_original(lag):
+    return dict(
+            k=lag, 
+            omega=0.25, 
+            n_omega=lag_mapping[str(lag)], 
+            z=lag_mapping[str(lag)], 
+            small_z=1,
+            roc_mean = False,
+            delta=0.95,
+            topm=1,
+            smoothing_threshold=0.5,
+            nr_clusters_single=1,
+            nr_clusters_ensemble=1,
+            concept_drift_detection="hoeffding",
+    )
+
+def ospgsm_per_original(lag):
+    return dict(
+            k=lag, 
+            omega=0.25, 
+            n_omega=lag_mapping[str(lag)], 
+            z=lag_mapping[str(lag)], 
+            small_z=1,
+            roc_mean = False,
+            delta=0.95,
+            topm=1,
+            smoothing_threshold=0.5,
+            nr_clusters_single=1,
+            nr_clusters_ensemble=1,
+            concept_drift_detection="periodic",
+    )
+
+def ospgsm_st_original(lag):
+    return dict(
+            k=lag, 
+            omega=0.25, 
+            n_omega=lag_mapping[str(lag)], 
+            z=lag_mapping[str(lag)], 
+            small_z=1,
+            roc_mean = False,
+            delta=0.95,
+            topm=1,
+            smoothing_threshold=0.5,
+            nr_clusters_single=1,
+            nr_clusters_ensemble=1,
+            concept_drift_detection=None,
+    )
+
+def ospgsm_int_original(lag):
+    return dict(
+            k=lag, 
+            omega=0.25, 
+            n_omega=lag_mapping[str(lag)], 
+            z=lag_mapping[str(lag)], 
+            small_z=lag,
+            roc_mean=False,
+            delta=0.95,
+            topm=1,
+            smoothing_threshold=0.5,
+            nr_clusters_single=1,
+            nr_clusters_ensemble=1, 
+            concept_drift_detection=None,
+    )

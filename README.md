@@ -11,7 +11,7 @@ Tested with `python==3.7`.
 
 `pip install git+https://github.com/MatthiasJakobs/tsx.git@ecml2021`
 
-`pip install torch==1.7 tqdm matplotlib sklearn fastdtw numpy pandas`
+`pip install torch==1.7 tslearn tqdm matplotlib sklearn fastdtw numpy pandas`
 
 ## How to use the code
 - `code/experiments.py` contains the used single models and datasets, as well as global parameters.

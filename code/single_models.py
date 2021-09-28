@@ -125,10 +125,10 @@ class BasePyTorchForecaster(nn.Module, BaseForecaster):
 class ResidualBlock(nn.Module):
 
     def __init__(self, input_filters, output_filters):
-        super(nn.Module, self).__init__()
+        super(ResidualBlock, self).__init__()
 
-        self.conv1 = nn.Conv1d(input_filters, output_filters, 3)
-        self.conv2 = nn.Conv1d(output_filters, output_filters, 3)
+        self.conv1 = nn.Conv1d(input_filters, output_filters, 3, padding=1)
+        self.conv2 = nn.Conv1d(output_filters, output_filters, 3, padding=1)
         self.relu1 = nn.ReLU()
         self.relu2 = nn.ReLU()
         self.batchnorm_1 = nn.BatchNorm1d(output_filters)
@@ -194,7 +194,7 @@ class Shallow_FCN(BasePyTorchForecaster):
 class OneResidualFCN(Shallow_FCN):
 
     def __init__(self, ts_length, nr_filters=32, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters)
@@ -212,7 +212,7 @@ class OneResidualFCN(Shallow_FCN):
 class TwoResidualFCN(Shallow_FCN):
 
     def __init__(self, ts_length, nr_filters=32, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters),
@@ -251,7 +251,7 @@ class TwoResidualFCN(Shallow_FCN):
 class TwoResidualFCN(Shallow_FCN):
 
     def __init__(self, ts_length, nr_filters=32, **kwargs):
-        super().__init__(**kwargs)
+        super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters),

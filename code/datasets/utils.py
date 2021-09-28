@@ -2,15 +2,21 @@ import torch
 import numpy as np
 import pandas as pd
 
-def sliding_split(x, lag, use_torch=False):
+def sliding_split(x, lag, z=1, use_torch=False):
     assert len(x.shape) == 1
 
-    X = np.zeros((len(x)-lag, lag))
-    y = np.zeros(len(X))
+    X = []
+    y = []
 
-    for i in range(len(X)):
-        X[i] = x[i:(i+lag)]
-        y[i] = x[(i+lag)]
+    for i in range(0, len(x), z):
+        if (i+lag) >= len(x):
+            break
+        #print(f"{i} From {i} to {i+lag}")
+        X.append(x[i:(i+lag)].reshape(1, -1))
+        y.append(x[(i+lag)])
+
+    X = np.concatenate(X, axis=0)
+    y = np.array(y)
 
     if use_torch:
         return torch.from_numpy(X).float(), torch.from_numpy(y)
@@ -18,20 +24,27 @@ def sliding_split(x, lag, use_torch=False):
     return X, y
 
 def equal_split(x, lag, use_torch=False):
-    if len(x.shape) == 2:
-        x = x.reshape(-1)
+    return sliding_split(x, lag, z=lag, use_torch=use_torch)
 
-    X = torch.zeros((int(len(x)/lag), lag))
-    y = torch.zeros(int((len(x)/lag)))
 
-    for i, idx in enumerate(range(0, len(x)-lag, lag)):
-        X[i] = x[idx:idx+lag]
-        y[i] = x[idx+lag]
+def roc_matrix(rocs, z=1):
+    lag = rocs.shape[-1]
+    m = np.ones((len(rocs), lag + len(rocs) * z - z)) * np.nan
 
-    if not use_torch:
-        return X.numpy(), y.numpy()
-    else:
-        return X, y
+    offset = 0
+    for i, roc in enumerate(rocs):
+        m[i, offset:(offset+lag)] = roc
+        offset += z
+
+    return m
+
+def roc_mean(roc_matrix):
+    summation_matrix = roc_matrix.copy()
+    summation_matrix[np.where(np.isnan(roc_matrix))] = 0
+    sums = np.sum(summation_matrix, axis=0)
+    nonzeros = np.sum(np.logical_not(np.isnan(roc_matrix)), axis=0)
+    return sums / nonzeros
+
 
 def train_test_split(x, split_percentages=(0.8, 0.2)):
     assert not isinstance(x, pd.core.frame.DataFrame)
