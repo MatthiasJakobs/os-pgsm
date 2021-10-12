@@ -1,7 +1,7 @@
 import torch
 from datasets import *
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import *
+from compositors import OS_PGSM
 from adaptive_mixtures import AdaptiveMixForecaster
 
 skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
@@ -361,9 +361,6 @@ implemented_datasets = {
     },
 }
 
-# val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
-# test_keys = val_keys + ['pred_' + w for w in comp_names]
-
 lag_mapping = {
      "5": 25,
     "10": 40,
@@ -444,3 +441,13 @@ def ospgsm_int_original(lag):
             nr_clusters_ensemble=1, 
             concept_drift_detection=None,
     )
+
+# All configurations used for experiments
+ospgsm_experiment_configurations = {
+    "ospgsm": ospgsm_original,
+    "ospgsm_st": ospgsm_st_original,
+    "ospgsm_int": ospgsm_int_original,
+}
+
+val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
+test_keys = val_keys + ['pred_' + w for w in ospgsm_experiment_configurations.keys()]

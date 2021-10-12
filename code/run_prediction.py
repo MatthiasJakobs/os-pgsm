@@ -6,88 +6,64 @@ import pandas as pd
 import glob
 
 from tqdm import tqdm, trange
-from datasets import Jena_Climate, Bike_Total_Rents, Bike_Temperature, Bike_Registered, M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
-from compositors import *
+from datasets import M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
+from compositors import OS_PGSM
 from datasets.utils import windowing, train_test_split, _apply_window, sliding_split, _val_split
-from collections import defaultdict
-from csv import DictReader
 from os.path import exists
-from experiments import single_models, implemented_datasets, lag_mapping, load_model, val_keys, comps, comp_names, test_keys, skip_models_composit, m4_data_path
+from pathlib import Path
+from experiments import single_models, implemented_datasets, lag_mapping, load_model, skip_models_composit, m4_data_path, ospgsm_experiment_configurations, test_keys
 from utils import smape
 from sklearn.metrics import mean_squared_error
 
-def evaluate_test(model, x_test, reuse_predictions=False, lag=5):
+def evaluate_test(model, x_test, lag=5, loss=smape):
     predictions = np.zeros_like(x_test)
 
     x = x_test[:lag]
     predictions[:lag] = x
 
     for x_i in range(lag, len(x_test)):
-        if reuse_predictions:
-            x = torch.from_numpy(predictions[x_i-lag:x_i]).unsqueeze(0)
-        else:
-            x = x_test[x_i-lag:x_i].unsqueeze(0)
-
+        x = x_test[x_i-lag:x_i].unsqueeze(0)
         predictions[x_i] = np.squeeze(model.predict(x.unsqueeze(0)))
         
-    error = smape(x_test.numpy(), predictions)
+    error = loss(x_test.numpy(), predictions)
     return predictions, error
 
-def rmse(a, b):
-    return mean_squared_error(a, b, squared=False)
+def run_single_models(models, model_names, X_val, X_test, ds_name, lag, loss=smape, verbose=False):
 
-def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_big, X_val, X_test, ds_name, lag, overwrite=False, repeats=5, loss=smape):
+    # Create folders (if not exist)
+    if not exists(f"results/lag{lag}/{ds_name}"):
+        path = Path(f"results/lag{lag}/{ds_name}")
+        path.mkdir(parents=True, exist_ok=True)
 
-    def _run_and_save(comp, comp_name, x_val):
-        if len(x_val.shape) == 1:
-            preds = comp.run(x_val, X_test, big_lag=lag_mapping[str(lag)], verbose=False)
-        else:
-            preds = comp.run(x_val, X_test)
-        return preds
+    # Save ground truth time-series as well
+    np.savetxt(f"results/lag{lag}/{ds_name}/y_test.csv", X_test)
+    np.savetxt(f"results/lag{lag}/{ds_name}/y_val.csv", X_val)
 
-    pd_val_best = pd.DataFrame(columns=["# y"])
-    pd_val_avg = pd.DataFrame(columns=["# y"])
-    pd_test_best = pd.DataFrame(columns=["# y"])
-    pd_test_avg = pd.DataFrame(columns=["# y"])
-    pd_val_best["# y"] = np.squeeze(X_val.numpy())
-    pd_val_avg["# y"] = np.squeeze(X_val.numpy())
-    pd_test_best["# y"] = np.squeeze(X_test.numpy())
-    pd_test_avg["# y"] = np.squeeze(X_test.numpy())
+    # Evaluate single models
+    for i, m in enumerate(models):
+        model_name = model_names[i]
+        test_result_path = f"results/lag{lag}/{ds_name}/{model_name}_test.csv"
+        val_result_path = f"results/lag{lag}/{ds_name}/{model_name}_val.csv"
 
-    # single models
-    for i, m in enumerate(tqdm(models)):
+        if exists(test_result_path) or exists(val_result_path):
+            print(f"Skipping evaluation of {model_name} on {ds_name} (lag {lag}) because it exits...")
+            continue
 
-        agg_test = np.zeros((repeats, len(X_test)))
-        agg_val = np.zeros((repeats, len(X_val)))
-        test_errors = np.zeros((repeats))
-        val_errors = np.zeros((repeats))
+        if verbose:
+            print(f"Evaluate {model_name} (lag {lag}) on {ds_name}")
 
-        for j in range(repeats):
-            before = time.time()
-            preds_test, _ = evaluate_test(m, X_test, reuse_predictions=False, lag=lag)
-            after = time.time()
-            if runtimes is not None:
-                runtimes["pred_" + model_names[i]].loc[ds_name] = after-before
+        # TODO: Removed multiple running. Is this okay?
+        preds_test, _ = evaluate_test(m, X_test, lag=lag, loss=loss)
 
-            x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
-            preds_val = m.predict(x_val_small.unsqueeze(1).float())
-            preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
+        x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
+        preds_val = m.predict(x_val_small.unsqueeze(1).float())
+        preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
 
-            test_errors[j] = loss(X_test.numpy(), preds_test)
-            val_errors[j] = loss(X_val.numpy(), preds_val)
-
-            agg_test[j] = preds_test
-            agg_val[j] = preds_val
-
-        test_best = np.argmin(test_errors)
-        val_best = np.argmin(val_errors)
-
-        pd_test_avg["pred_" + model_names[i]] = np.mean(agg_test, axis=0)
-        pd_val_avg["pred_" + model_names[i]] = np.mean(agg_val, axis=0)
-
-        pd_test_best["pred_" + model_names[i]] = agg_test[test_best]
-        pd_val_best["pred_" + model_names[i]] = agg_val[val_best]
+        np.savetxt(test_result_path, preds_test)
+        np.savetxt(val_result_path, preds_val)
     
+
+def run_comparison(models, X_val, X_test, ds_name, lag, verbose=False):
     # remove unwanted models from compositions
     comp_models = []
     for m in models:
@@ -95,36 +71,26 @@ def run_comparison(models, runtimes, model_names, override, x_val_small, x_val_b
             comp_models.append(m)
 
     models = comp_models
-    start_idx = len(val_keys)
 
-    # composite models
-    for idx in trange(len(comp_names)):
+    # Run all configurations of our ospgsm algorithm
+    for ospgsm_exp_name, ospgsm_exp_config in ospgsm_experiment_configurations.items():
+        comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
 
-        agg_test = np.zeros((repeats, len(X_test)))
-        test_errors = np.zeros(repeats)
+        if exists(comp_test_result_path):
+            print(f"Skipping evaluation of {ospgsm_exp_name} on {ds_name} (lag {lag}) because it exits...")
+            continue
 
-        for j in range(repeats):
-            c_idx = comps[idx](models, lag, lag_mapping[str(lag)])
-            before = time.time()
-            if isinstance(c_idx, BaseAdaptive):
-                preds = _run_and_save(c_idx, comp_names[idx], X_val)
-            else:
-                preds = _run_and_save(c_idx, comp_names[idx], x_val_big)
-            after = time.time()
-            agg_test[j] = preds
-            test_errors[j] = loss(X_test.numpy(), preds)
+        if verbose:
+            print(f"Evaluate {ospgsm_exp_name} (lag {lag}) on {ds_name}")
 
-        test_best = np.argmin(test_errors)
-        pd_test_best["pred_" + comp_names[idx]] = agg_test[test_best]
-        pd_test_avg["pred_" + comp_names[idx]] = np.mean(agg_test, axis=0)
-        if runtimes is not None:
-            runtimes["pred_" + comp_names[idx]].loc[ds_name] = after-before
-    
-    pd_test_best.to_csv("results/{}_lag{}_{}_test.csv".format(ds_name, lag, "best"), index=False)
-    pd_test_avg.to_csv("results/{}_lag{}_{}_test.csv".format(ds_name, lag, "avg"), index=False)
-    pd_val_best.to_csv("results/{}_lag{}_{}_val.csv".format(ds_name, lag, "best"), index=False)
-    pd_val_avg.to_csv("results/{}_lag{}_{}_val.csv".format(ds_name, lag, "avg"), index=False)
-    return runtimes
+        compositor = OS_PGSM(models, ospgsm_exp_config(lag)) 
+        preds = compositor.run(X_val, X_test)
+
+        np.savetxt(comp_test_result_path, preds)
+        
+
+    # TODO: Here, we would test the other methods we want to compare against
+
 
 def _get_m4_ds(name):
     if "hourly" in name:
@@ -158,7 +124,7 @@ def _get_m4_full(part, index):
 
     return part + "_" + char + str(index)
 
-def main(lag, ds_names=None, override=None):
+def main(lag, ds_names=None, override=None, verbose=None):
     if ds_names is not None:
         dataset_names = ds_names
     else:
@@ -166,16 +132,12 @@ def main(lag, ds_names=None, override=None):
 
     if override is None:
         override = []
+
+    verbose = verbose is not None
     
     model_names = single_models.keys()
 
-    if exists("results/runtimes_{}.csv".format(lag)):
-        runtimes = pd.read_csv("results/runtimes_{}.csv".format(lag), index_col=0)
-    else:
-        runtimes = pd.DataFrame(index=list(implemented_datasets.keys()), columns=test_keys[1:])
-
-
-    for d_ind, d_name in enumerate(dataset_names):
+    for d_name in dataset_names:
 
         # assume: m4_hourly, m4_weekly, m4_quaterly, m4_monthly etc.
         if d_name.startswith("m4"):
@@ -208,35 +170,34 @@ def main(lag, ds_names=None, override=None):
                     print(designator, "is to short, skipping")
                     continue
 
-                x_val_big = _val_split(X_val, lag, lag_mapping[str(lag)], use_torch=True)
                 x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
                 x_val_small = x_val_small.unsqueeze(1)
 
                 X_test = X_test.float()
                 X_val = X_val.float()
-                run_comparison(models, None, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
+                run_comparison(models, X_val, X_test, ds_full_name, lag)
 
         else:
             ds_full_name = d_name
             ds = implemented_datasets[d_name]['ds']()
 
             X = ds.torch()
-            [x_train, x_val_small], [_, _], x_val_big, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
-
-            ts_length = lag 
+            [_, x_val_small], [_, _], _, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
 
             models = []
             for m_name in model_names:
-                models.append(load_model(m_name, d_name, lag, ts_length))
+                models.append(load_model(m_name, d_name, lag, lag))
         
-            runtimes = run_comparison(models, runtimes, list(model_names), override, x_val_small, x_val_big, X_val, X_test, ds_full_name, lag)
+            run_single_models(models, list(model_names), X_val, X_test, ds_full_name, lag, verbose=verbose)
+            run_comparison(models, X_val, X_test, ds_full_name, lag, verbose=verbose)
 
-    runtimes.to_csv("results/runtimes_{}.csv".format(lag))
+    #runtimes.to_csv("results/runtimes_{}.csv".format(lag))
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--datasets", action="store", help="choose datasets to use for training", nargs="+")
     parser.add_argument("--override", action="store", help="", nargs="+")
     parser.add_argument("--lag", action="store", help="choose lag to use for training", default=5, type=int)
+    parser.add_argument("--verbose", help="print out all kinds of information", nargs="+")
     args = parser.parse_args()
-    main(args.lag, ds_names=args.datasets, override=args.override)
+    main(args.lag, ds_names=args.datasets, override=args.override, verbose=args.verbose)
