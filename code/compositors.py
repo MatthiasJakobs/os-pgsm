@@ -31,6 +31,7 @@ class OS_PGSM:
         self.delta = config.get("delta", 0.05)
         self.roc_mean = config.get("roc_mean", False)
         self.rng = np.random.RandomState(random_state)
+        self.random_state = random_state
         self.concept_drift_detection = config.get("concept_drift_detection", None)
 
         if self.topm != 1 and self.nr_clusters_ensemble != 1:
@@ -96,8 +97,8 @@ class OS_PGSM:
                 return True
 
     # TODO: No runtime reports
-    def run(self, X_val, X_test, reuse_prediction=False, verbose=True, report_runtime=False, random_state=0):
-        with fixedseed(torch, seed=random_state):
+    def run(self, X_val, X_test, reuse_prediction=False):
+        with fixedseed(torch, seed=self.random_state):
             self.rebuild_rocs(X_val)
             self.shrink_rocs()        
 
@@ -151,7 +152,7 @@ class OS_PGSM:
 
         reduced_best_models = [] # Aggregator for best models after reduction
 
-        all_roc_points = [item for sublist in self.rocs for item in sublist]
+        all_roc_points = [item for sublist in self.rocs[best_models] for item in sublist]
 
         # Cluster into the desired number of left-over models.
         tslearn_formatted = to_time_series_dataset(all_roc_points)
