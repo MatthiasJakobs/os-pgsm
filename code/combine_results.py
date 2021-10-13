@@ -1,18 +1,8 @@
-import torch
 import numpy as np
 import argparse
-import time
 import pandas as pd
-import glob
 
-from tqdm import tqdm, trange
-from datasets import M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
-from compositors import OS_PGSM
-from datasets.utils import windowing, train_test_split, _apply_window, sliding_split, _val_split
-from os.path import exists
-from experiments import single_models, implemented_datasets, lag_mapping, load_model, skip_models_composit, m4_data_path, ospgsm_experiment_configurations, test_keys
-from utils import smape
-from sklearn.metrics import mean_squared_error
+from experiments import single_models, ospgsm_experiment_configurations
 
 def combine(ds_name, lag):
     model_names = list(single_models.keys())

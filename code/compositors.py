@@ -2,16 +2,12 @@ import torch
 import numpy as np
 import time
 
-from tqdm import trange, tqdm
-from tslearn import clustering
 from utils import gradcam
-from datasets.utils import sliding_split, equal_split, roc_matrix, roc_mean
+from datasets.utils import sliding_split, roc_matrix, roc_mean
 from utils import smape, dtw
-from sklearn.neighbors import KNeighborsClassifier
 from tslearn.clustering import TimeSeriesKMeans
 from tslearn.utils import to_time_series_dataset
 from seedpy import fixedseed
-
 
 class OS_PGSM:
 
