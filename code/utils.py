@@ -1,6 +1,10 @@
 import torch
 import numpy as np
 from fastdtw import fastdtw
+import hashlib
+
+def calculate_single_seed(model_name, ds_name, lag):
+    return int(hashlib.md5((model_name+ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
 
 def dtw(s, t):
     return fastdtw(s, t)[0]

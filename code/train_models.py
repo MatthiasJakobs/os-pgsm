@@ -1,20 +1,19 @@
 import torch 
 import numpy as np
 import argparse
-import hashlib
 
 from datasets.utils import windowing, _apply_window, train_test_split
 from experiments import single_models, implemented_datasets, lag_mapping, m4_data_path
 from datasets import M4_Hourly, M4_Daily, M4_Monthly, M4_Weekly, M4_Quaterly, M4_Yearly
 from os.path import exists
-
+from utils import calculate_single_seed
 
 def train_model(model, x_train, y_train, x_val, y_val, lag, model_name, ds_name, nr_filters, batch_size, epochs, hidden_states, learning_rate, save_plot=False, verbose=True):
         save_path = "models/{}/{}_lag{}.pth".format(model_name, ds_name, lag)
         print(f"Start training {save_path}")
         if not exists(save_path):
             # Set seed according to model name
-            config_seed = int(hashlib.md5((model_name+ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
+            config_seed = calculate_single_seed(model_name, ds_name, lag)
             print(config_seed)
             torch.manual_seed(config_seed)
 
