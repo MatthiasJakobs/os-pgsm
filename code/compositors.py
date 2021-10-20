@@ -142,35 +142,36 @@ class OS_PGSM:
 
             return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
-    def reduce_best_m(self, best_models):
+    def reduce_best_m(self, best_models, clostest_rocs):
         if self.nr_clusters_ensemble == 1:
             return best_models
 
-        reduced_best_models = [] # Aggregator for best models after reduction
-
-        all_roc_points = [item for sublist in self.rocs[best_models] for item in sublist]
+        # Edge case where there were not enough topm models to allow for further shrinkage
+        if self.nr_clusters_ensemble <= len(best_models):
+            print(f"WARNING: No clustering since nr_cluster_ensemble={self.nr_cluster_ensemble} <= len(best_models)={len(best_models)}")
+            return best_models
 
         # Cluster into the desired number of left-over models.
-        tslearn_formatted = to_time_series_dataset(all_roc_points)
+        tslearn_formatted = to_time_series_dataset(clostest_rocs)
         km = TimeSeriesKMeans(n_clusters=self.nr_clusters_ensemble, metric="dtw", random_state=self.rng)
-        km.fit(tslearn_formatted)
+        C = km.fit_predict(tslearn_formatted)
+        C_count = np.bincount(C)
 
-        cluster_centers = km.cluster_centers_.squeeze()
+        # Final model selection
+        G = []
 
-        # The models with the closest mean distance to each cluster center
-        # will be chosen
-        for ccenter in cluster_centers:
-            distances = np.zeros(len(best_models))
-            for i, model in enumerate(best_models):
-                roc = self.rocs[model]
-                mean_d = np.mean([dtw(a, ccenter) for a in roc])
-                distances[i] = mean_d
+        for p in range(self.nr_clusters_ensemble):
+            if C_count[p] == 1:
+                G.append(p)
+                continue
+            
+            # Under all cluster members, find the one maximizing distance to current point
+            cluster_member_indices = np.where(C == p)[0]
+            # Since the best_models (and closest_rocs) are sorted by distance to x (ascending), 
+            # choosing the last one will always maximize distance
+            G.append(cluster_member_indices[-1])
 
-            reduced_best_models.append(best_models[np.argmin(distances)])
-
-        reduced_best_models = list(set(reduced_best_models)) # Remove duplicates
-
-        return reduced_best_models
+        return G
         
     # TODO: Make faster
     def forecast_on_test(self, x_test, reuse_prediction=False, report_runtime=False):
@@ -189,10 +190,10 @@ class OS_PGSM:
                 x = x_test[x_i-self.lag:x_i].unsqueeze(0)
 
             before_rt = time.time()
-            best_models = self.find_best_forecaster(x)
+            best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
 
             # Further reduce number of best models by clustering
-            best_models = self.reduce_best_m(best_models)
+            best_models = self.reduce_best_m(best_models, closest_rocs)
 
             self.test_forecasters.append(best_models)
             for i in range(len(best_models)):
@@ -302,9 +303,8 @@ class OS_PGSM:
         return rocs
 
     def find_best_forecaster(self, x, return_closest_roc=False):
-        assert return_closest_roc == False # TODO: Not implemented
-
         model_distances = np.ones(len(self.models)) * 1e10
+        closest_rocs_agg = [None]*len(self.models)
 
         for i, m in enumerate(self.models):
 
@@ -313,6 +313,18 @@ class OS_PGSM:
                 distance = dtw(r, x)
                 if distance < model_distances[i]:
                     model_distances[i] = distance
+                    closest_rocs_agg[i] = r
 
         top_models = np.argsort(model_distances)[:self.topm]
+        closest_rocs = []
+        for i in top_models:
+            if closest_rocs_agg[i] is not None:
+                closest_rocs.append(closest_rocs_agg[i])
+
+        # There might be more desired models than rocs available, so we need to reduce top models accordingly
+        top_models = top_models[:len(closest_rocs)]
+
+        if return_closest_roc:
+            return top_models, closest_rocs
+
         return top_models
