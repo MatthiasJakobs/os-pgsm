@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import matplotlib.pyplot as plt
+import copy
 
 from typing import List
 from single_models import OneResidualFCN, Shallow_FCN
@@ -10,7 +11,7 @@ from datasets.utils import windowing, _apply_window, train_test_split
 from seedpy import fixedseed
 from experiments import single_models, skip_models_composit, implemented_datasets, m4_data_path
 from datasets import M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Weekly, M4_Yearly
-from utils import calculate_single_seed
+from utils import calculate_single_seed, ncl_seed
 from os.path import exists
 
 class NegCorLearning(nn.Module):
@@ -43,7 +44,7 @@ class NegCorLearning(nn.Module):
 
         return torch.sum((1/self.nr_models) * first_agg - self.lamb * (1/self.nr_models) * second_agg)
 
-    def fit(self, X_train, y_train, X_val, y_val, model_save_path=None, verbose=False):
+    def fit(self, X_train, y_train, X_val, y_val, verbose=False):
 
         train_ds = torch.utils.data.TensorDataset(X_train, y_train)
         train_dl = torch.utils.data.DataLoader(train_ds, batch_size=self.batch_size, shuffle=True)
@@ -86,23 +87,25 @@ class NegCorLearning(nn.Module):
                 if loss < best_val_loss:
                     best_val_epoch = epoch
                     best_val_loss = loss
-                    torch.save(self.models, model_save_path)
+                    #torch.save(self.models, model_save_path)
+                    best_val_model = copy.deepcopy(self.models)
                 else:
                     if (epoch - best_val_epoch) >= self.early_stopping:
-                        print(f"Early stopping at epoch {epoch}, reverting to {best_val_epoch}")
-                        return train_losses, val_losses
+                        #print(f"Early stopping at epoch {epoch}, reverting to {best_val_epoch}")
+                        return best_val_loss, best_val_model
 
             train_losses.append(epoch_loss)
             val_losses.append(epoch_val_loss)
             if verbose:
                 print(epoch, epoch_loss, epoch_val_loss)
 
-        return train_losses, val_losses
+        return best_val_loss, best_val_model
 
 def main():
     # Test NCC
 
-    lag = 10
+    lag = 5
+    repeats = 5
     for ds_name, ds in implemented_datasets.items():
         model_save_path = f"models/ncl/{ds_name}_lag{lag}.pth"
 
@@ -115,21 +118,38 @@ def main():
 
         [x_train, x_val], [y_train, y_val], _, _, _ = windowing(X, train_input_width=lag, val_input_width=lag*lag, use_torch=True)
 
-        used_single_models = []
-        for m_name, model_obj in single_models.items():
-            m = model_obj["obj"]
-            nr_filters = model_obj["nr_filters"]
-            hidden_states = model_obj["hidden_states"]
-            if m not in skip_models_composit:
-                with fixedseed(torch, seed=calculate_single_seed(m_name, ds_name, lag)):
-                    try:
-                        used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size))
-                    except TypeError:
-                        used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], batch_size=batch_size))
+        with fixedseed(torch, seed=ncl_seed(ds_name, lag)):
+            losses = np.zeros((repeats))
+            models = []
+            for i in range(repeats):
+                used_single_models = []
+                for m_name, model_obj in single_models.items():
+                    m = model_obj["obj"]
+                    nr_filters = model_obj["nr_filters"]
+                    hidden_states = model_obj["hidden_states"]
+                    if m not in skip_models_composit:
+                            try:
+                                used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size))
+                            except TypeError:
+                                used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], batch_size=batch_size))
 
-        model = NegCorLearning(used_single_models)
-        model.batch_size = batch_size
-        model.fit(x_train, y_train, x_val, y_val, verbose=False, model_save_path=model_save_path)
+                model = NegCorLearning(used_single_models)
+                model.batch_size = batch_size
+                val_loss, best_model = model.fit(x_train, y_train, x_val, y_val, verbose=False)
+
+                print(ds_name, i, val_loss)
+
+                losses[i] = val_loss
+                models.append(best_model)
+
+            # Choose the most average model
+            average_performance = np.mean(losses)
+            rel_scores = np.abs(losses-average_performance)
+            nearest_model_idx = np.argmin(rel_scores)
+            print(ds_name, "chose", nearest_model_idx)
+            print("-"*30)
+
+            torch.save(models[nearest_model_idx], model_save_path)
 
 
     name_list = ['hourly', 'weekly', 'quaterly', 'daily', 'monthly']
@@ -153,22 +173,40 @@ def main():
             x_train, y_train = _apply_window(ds_train, lag)
             x_val, y_val = _apply_window(ds_val, lag)
 
-            used_single_models = []
+            ds_name = f"m4_{name}_{padded_idx}"
             batch_size = 500
-            for m_name, model_obj in single_models.items():
-                m = model_obj["obj"]
-                nr_filters = model_obj["nr_filters"]
-                hidden_states = model_obj["hidden_states"]
-                if m not in skip_models_composit:
-                    with fixedseed(torch, seed=calculate_single_seed(m_name, ds_name, lag)):
-                        try:
-                            used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size))
-                        except TypeError:
-                            used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], batch_size=batch_size))
+            with fixedseed(torch, seed=ncl_seed(ds_name, lag)):
+                losses = np.zeros((repeats))
+                models = []
+                for i in range(repeats):
+                    used_single_models = []
+                    for m_name, model_obj in single_models.items():
+                        m = model_obj["obj"]
+                        nr_filters = model_obj["nr_filters"]
+                        hidden_states = model_obj["hidden_states"]
+                        if m not in skip_models_composit:
+                                try:
+                                    used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size))
+                                except TypeError:
+                                    used_single_models.append(m(nr_filters=nr_filters, ts_length=x_train.shape[-1], batch_size=batch_size))
 
-            model = NegCorLearning(used_single_models)
-            model.batch_size = batch_size
-            model.fit(x_train, y_train, x_val, y_val, verbose=False, model_save_path=model_save_path)
+                    model = NegCorLearning(used_single_models)
+                    model.batch_size = batch_size
+                    val_loss, best_model = model.fit(x_train, y_train, x_val, y_val, verbose=False)
+
+                    print(ds_name, i, val_loss)
+
+                    losses[i] = val_loss
+                    models.append(best_model)
+
+                # Choose the most average model
+                average_performance = np.mean(losses)
+                rel_scores = np.abs(losses-average_performance)
+                nearest_model_idx = np.argmin(rel_scores)
+                print(ds_name, "chose", nearest_model_idx)
+                print("-"*30)
+
+                torch.save(models[nearest_model_idx], model_save_path)
 
 if __name__ == "__main__":
     main()
