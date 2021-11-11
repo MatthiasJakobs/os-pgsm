@@ -3,8 +3,7 @@ launch.json
 test.py
 *.pyc
 results_*.zip
-results/*
-plots/*
-models/*
+*.csv
+*.pth
 !.placeholder
 *.tsf
