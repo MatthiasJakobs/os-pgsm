@@ -6,3 +6,4 @@ results_*.zip
 results/*
 plots/*
 models/*
+!.placeholder
