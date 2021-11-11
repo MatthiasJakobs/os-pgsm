@@ -7,3 +7,4 @@ results/*
 plots/*
 models/*
 !.placeholder
+*.tsf
