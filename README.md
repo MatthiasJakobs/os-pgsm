@@ -1,6 +1,7 @@
 # OS-PGSM
 
-Code accompanying the ECML2021 research track submission 599 titled *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*
+Code accompanying the ECML2021 publication *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*.
+To replicate the experiments presented in the publication, please check out the `ecml2021` branch at `https://github.com/MatthiasJakobs/os-pgsm/tree/ecml2021`.
 
 ## Datasets
 You have to download the M4 dataset manually and specify its path in `code/experiments.py` under `m4_data_path`. All other datasets should download automatically.
