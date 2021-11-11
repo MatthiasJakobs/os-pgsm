@@ -7,7 +7,7 @@ from datasets.utils import train_test_split, sliding_split
 
 class AdaptiveMixForecaster(nn.Module):
 
-    def __init__(self, lag, nr_filters=None, nr_experts=8, ts_length=None, hidden_states=None, learning_rate=1e-3, batch_size=50, epochs=300):
+    def __init__(self, lag=5, nr_filters=None, nr_experts=8, ts_length=None, hidden_states=None, learning_rate=1e-3, batch_size=50, epochs=300):
         super(AdaptiveMixForecaster, self).__init__()
 
         self.lag = lag

@@ -6,6 +6,10 @@ import hashlib
 def calculate_single_seed(model_name, ds_name, lag):
     return int(hashlib.md5((model_name+ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
 
+# Fixed seed for Negative Correlation Learning seed
+def ncl_seed(ds_name, lag):
+    return int(hashlib.md5((ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
+
 def dtw(s, t):
     return fastdtw(s, t)[0]
 
@@ -46,6 +50,19 @@ def smape(a, b, axis=None):
         return fn_mean(nom / denom, axis=axis)
     return fn_mean(nom / denom)
 
+def mape(y_pred, y_true):
+    return torch.mean((y_true-y_pred)/y_true, axis=0)
+
+def mse(a, b):
+    return torch.mean((a - b)**2, axis=0)
+
 # TODO: Make pytorch-independent
 def mae(a, b):
     return torch.mean(torch.abs(a - b))
+
+def msle(a, b):
+    return torch.mean((torch.log(a)-torch.log(b))**2, axis=0)
+
+# Mean bias error
+def mbe(a, b):
+    return torch.mean(a - b)

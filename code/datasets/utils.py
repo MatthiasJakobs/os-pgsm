@@ -111,3 +111,24 @@ def windowing(X, train_input_width=3, val_input_width=9, offset=0, label_width=1
         X_test = torch.from_numpy(X_test).unsqueeze(1).float()
 
     return [x_train_small, x_val_small], [y_train_small, y_val_small], x_val_big, X_val, X_test
+
+def simple_windowing(X):
+    lag = 5
+    [x_train_small, x_val_small], [y_train_small, y_val_small], x_val_big, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=25, use_torch=True)
+
+    X_train_val = torch.cat([x_train_small, x_val_small], axis=0)
+    y_train_val = torch.cat([y_train_small, y_val_small], axis=0)
+
+    return [X_train_val, y_train_val], X_test
+
+def get_all_M4(lag):
+    if lag != 5:
+        raise Exception("Currently only supports lag 5")
+
+    with open("code/datasets/m4_lag5.txt") as f:
+        datasets = [d.replace("\n", "") for d in f.readlines()]
+
+    return datasets
+
+
+    

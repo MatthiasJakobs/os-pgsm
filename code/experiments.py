@@ -1,4 +1,5 @@
 import torch
+import skorch
 from datasets import *
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
 from compositors import OS_PGSM
@@ -11,6 +12,25 @@ skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
 
 m4_data_path = "/data/M4"
 
+def load_models_skorch(ds_name, ds_index):
+    all_models = []
+    model_names = [(name, m_obj) for (name, m_obj) in single_models.items() if not "lstm" in name and not "adaptive" in name]
+    for model_name, model_obj in model_names:
+        save_path = f"results/{ds_name}/{ds_index}_{model_name}.pth"
+        nr_filters = model_obj["nr_filters"]
+        hidden_states = model_obj["hidden_states"]
+        model = skorch.NeuralNetRegressor(
+                model_obj["obj"], 
+                module__nr_filters=nr_filters, 
+                module__hidden_states=hidden_states, 
+                module__ts_length=5) # ?
+
+        model.initialize()
+        model.load_params(f_params=save_path)
+        all_models.append(model.module_)
+
+    return all_models
+        
 def load_model(m_name, d_name, lag, ts_length):
     m_obj = single_models[m_name]
 
@@ -67,17 +87,17 @@ single_models = {
     "rnn_d" : {
         "obj": Shallow_CNN_RNN,
         "nr_filters": 32,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "rnn_e" : {
         "obj": Shallow_CNN_RNN,
         "nr_filters": 64,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "rnn_f" : {
         "obj": Shallow_CNN_RNN,
         "nr_filters": 128,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "cnn_a" : {
         "obj": Shallow_FCN,
@@ -112,17 +132,17 @@ single_models = {
     "as01_d" : {
         "obj": AS_LSTM_01,
         "nr_filters": 32,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as01_e" : {
         "obj": AS_LSTM_01,
         "nr_filters": 64,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as01_f" : {
         "obj": AS_LSTM_01,
         "nr_filters": 128,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as02_a" : {
         "obj": AS_LSTM_02,
@@ -142,17 +162,17 @@ single_models = {
     "as02_d" : {
         "obj": AS_LSTM_02,
         "nr_filters": 32,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as02_e" : {
         "obj": AS_LSTM_02,
         "nr_filters": 64,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as02_f" : {
         "obj": AS_LSTM_02,
         "nr_filters": 128,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as03_a" : {
         "obj": AS_LSTM_03,
@@ -172,17 +192,17 @@ single_models = {
     "as03_d" : {
         "obj": AS_LSTM_03,
         "nr_filters": 32,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as03_e" : {
         "obj": AS_LSTM_03,
         "nr_filters": 64,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "as03_f" : {
         "obj": AS_LSTM_03,
         "nr_filters": 128,
-        "hidden_states": 100
+        "hidden_states": 30
     },
     "one_residual_a" : {
         "obj": OneResidualFCN,
@@ -269,12 +289,12 @@ implemented_datasets = {
         "batch_size": 100,
         "lr": 1e-4,
     },
-    "EthanolConcentration": {
-        "ds": EthanolConcentration,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
+    # "EthanolConcentration": {
+    #     "ds": EthanolConcentration,
+    #     "epochs": 2500,
+    #     "batch_size": 100,
+    #     "lr": 1e-4,
+    # },
     "Mallat": {
         "ds": Mallat,
         "epochs": 2500,
@@ -378,64 +398,89 @@ lag_mapping = {
 # nr_clusters_ensemble: Number of desired clusters over all ensembles
 # concept_drift_detection: ["periodic", "hoeffding", None]
 ###
-def ospgsm_original(lag):
+def min_distance_drifts():
     return dict(
-            k=lag, 
+            k=5, 
             omega=0.25, 
-            n_omega=lag_mapping[str(lag)], 
-            z=lag_mapping[str(lag)], 
+            n_omega=50, 
+            z=25,
+            small_z=1,
+            roc_mean = True,
+            delta=0.95,
+            topm=10,
+            smoothing_threshold=0.5,
+            nr_clusters_single=1,
+            nr_clusters_ensemble=5,
+            drift_type="min_distance_change",
+            concept_drift_detection="hoeffding",
+    )
+
+def ospgsm_original():
+    return dict(
+            k=5, 
+            omega=0.25, 
+            n_omega=25,
+            z=25,
             small_z=1,
             roc_mean = False,
             delta=0.95,
             topm=1,
+            invert_relu=False,
+            roc_take_only_best=True,
             smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="hoeffding",
     )
 
-def ospgsm_per_original(lag):
+def ospgsm_per_original():
     return dict(
-            k=lag, 
+            k=5, 
             omega=0.25, 
-            n_omega=lag_mapping[str(lag)], 
-            z=lag_mapping[str(lag)], 
+            n_omega=25,
+            z=25,
             small_z=1,
             roc_mean = False,
             delta=0.95,
             topm=1,
+            invert_relu=False,
+            roc_take_only_best=True,
             smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="periodic",
     )
 
-def ospgsm_st_original(lag):
+def ospgsm_st_original():
     return dict(
-            k=lag, 
+            k=5, 
             omega=0.25, 
-            n_omega=lag_mapping[str(lag)], 
-            z=lag_mapping[str(lag)], 
+            n_omega=25,
+            z=25,
             small_z=1,
             roc_mean = False,
             delta=0.95,
             topm=1,
+            invert_relu=False,
+            roc_take_only_best=True,
             smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection=None,
     )
 
-def ospgsm_int_original(lag):
+def ospgsm_int_original():
     return dict(
-            k=lag, 
+            k=5, 
             omega=0.25, 
-            n_omega=lag_mapping[str(lag)], 
-            z=lag_mapping[str(lag)], 
-            small_z=lag,
+            n_omega=25,
+            z=25,
+            small_z=5,
             roc_mean=False,
             delta=0.95,
             topm=1,
+            invert_relu=False,
+            roc_take_only_best=True,
             smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1, 

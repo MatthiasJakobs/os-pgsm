@@ -3,7 +3,7 @@ import numpy as np
 import time
 
 from tqdm import trange
-from utils import gradcam, smape, dtw
+from utils import gradcam, smape, dtw, mape
 #from datasets.utils import sliding_split, equal_split
 from sklearn.neighbors import KNeighborsClassifier
 
@@ -142,8 +142,12 @@ class OS_PGSM_St(BaseCompositor):
                 res = m.forward(test.unsqueeze(1), return_intermediate=True)
                 logits = res['logits'].squeeze()
                 feats = res['feats']
-                l = smape(logits, y[idx])
+                #l = mape(logits, y[idx])
+                #l = torch.nn.MSELoss()(logits, y[idx])
+                #l = smape(logits, y[idx])
+                l = torch.nn.MSELoss()(logits, y[idx])
                 r = gradcam(l, feats)
+                print(r)
                 cams.append(np.expand_dims(r, 0))
                 losses[n_m] += l.detach().item()
 

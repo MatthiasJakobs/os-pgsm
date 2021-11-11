@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import pandas as pd
@@ -31,6 +32,27 @@ class BaseForecaster:
 
     def preprocessing(self, X_train, y_train, X_test=None, y_test=None):
         raise NotImplementedError()
+
+class BaselineLastValue(nn.Module):
+    def __init__(self, **kwargs):
+        super(BaselineLastValue, self).__init__()
+
+    def forecast_point(self, x):
+        x = x.squeeze()
+        if len(x.shape) == 1:
+            return x[-1]
+        if len(x.shape) == 2:
+            return x[:, -1]
+        raise Exception(f"Input shape {x.shape} not supported in baseline model")
+
+    def forward(self, x):
+        return self.forecast_point(x)
+
+    def predict(self, x):
+        with torch.no_grad():
+            if isinstance(x, np.ndarray):
+                x = torch.from_numpy(x)
+            return self.forecast_point(x).numpy()
 
 class BasePyTorchForecaster(nn.Module, BaseForecaster):
 
@@ -146,7 +168,7 @@ class ResidualBlock(nn.Module):
 
 class Shallow_FCN(BasePyTorchForecaster):
 
-    def __init__(self, ts_length, nr_filters=32, **kwargs):
+    def __init__(self, ts_length, hidden_states=0, nr_filters=32, **kwargs):
         super().__init__(**kwargs)
 
         self.feature_extractor = nn.Sequential(
@@ -404,7 +426,7 @@ class AS_LSTM_01(Shallow_CNN_RNN):
 
 class Simple_LSTM(BasePyTorchForecaster):
 
-    def __init__(self, lag, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, **kwargs):
+    def __init__(self, lag=5, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, **kwargs):
         super().__init__(**kwargs)
 
         self.output_size = output_size

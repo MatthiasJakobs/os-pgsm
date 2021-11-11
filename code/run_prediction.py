@@ -1,13 +1,14 @@
 import numpy as np
 import argparse
 import glob
+import re
 
 from datasets import M4_Daily, M4_Hourly, M4_Monthly, M4_Quaterly, M4_Quaterly, M4_Weekly
 from compositors import OS_PGSM
-from datasets.utils import windowing, train_test_split, sliding_split
+from datasets.utils import get_all_M4, windowing, train_test_split, sliding_split
 from os.path import exists
 from pathlib import Path
-from experiments import single_models, implemented_datasets, lag_mapping, load_model, skip_models_composit, m4_data_path, ospgsm_experiment_configurations
+from experiments import single_models, implemented_datasets, lag_mapping, load_model, skip_models_composit, m4_data_path, ospgsm_experiment_configurations, min_distance_drifts
 from utils import smape
 
 def evaluate_test(model, x_test, lag=5, loss=smape):
@@ -67,24 +68,78 @@ def run_comparison(models, X_val, X_test, ds_name, lag, verbose=False):
 
     models = comp_models
 
+    n_omegas = [25, 30, 40, 50]
+    n_ensembles = [10, 15, 20]
+    thetas = [0.1, 0.5]
+
+    skipped_models = []
+
     # Run all configurations of our ospgsm algorithm
-    for ospgsm_exp_name, ospgsm_exp_config in ospgsm_experiment_configurations.items():
-        comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
+    for n_omega in n_omegas:
+        for n_ensemble in n_ensembles:
+            for theta in thetas:
+                for ospgsm_exp_name, ospgsm_exp_config in ospgsm_experiment_configurations.items():
+                    conf = ospgsm_exp_config()
+                    conf["n_omega"] = n_omega
+                    conf["nr_clusters_ensemble"] = n_ensemble
+                    conf["topm"] = min(2*n_ensemble, 30)
+                    conf["smoothing_threshold"] = theta
+                    conf["z"] = n_omega
 
-        if exists(comp_test_result_path):
-            print(f"Skipping evaluation of {ospgsm_exp_name} on {ds_name} (lag {lag}) because it exits...")
-            continue
+                    #comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
+                    comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_{n_omega}_{n_ensemble}_{theta}_test.csv"
+                    print(conf)
 
-        if verbose:
-            print(f"Evaluate {ospgsm_exp_name} (lag {lag}) on {ds_name}")
+                    if exists(comp_test_result_path):
+                        print(f"Skipping evaluation of {ospgsm_exp_name} on {ds_name} (lag {lag}) because it exits...")
+                        continue
 
-        compositor = OS_PGSM(models, ospgsm_exp_config(lag)) 
-        preds = compositor.run(X_val, X_test)
+                    if verbose:
+                        print(f"Evaluate {ospgsm_exp_name} (lag {lag}) on {ds_name}")
 
-        np.savetxt(comp_test_result_path, preds)
+                    compositor = OS_PGSM(models, conf) 
+                    try:
+                        preds = compositor.run(X_val, X_test)
+                    except Exception:
+                        skipped_models.append([ds_name, n_omega, n_ensemble, theta, ospgsm_exp_name])
+                        continue
+
+                    if np.any(np.isnan(preds)):
+                        skipped_models.append([ds_name, n_omega, n_ensemble, theta, ospgsm_exp_name])
+                        continue
+
+                    np.savetxt(comp_test_result_path, preds)
         
+                min_distance_config = min_distance_drifts()
+                min_distance_config["n_omega"] = n_omega
+                min_distance_config["nr_clusters_ensemble"] = n_ensemble
+                min_distance_config["topm"] = 2*n_ensemble
+                min_distance_config["smoothing_threshold"] = theta
 
-    # TODO: Here, we would test the other methods we want to compare against
+                #comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
+                comp_test_result_path = f"results/lag{lag}/{ds_name}/min_distance_{n_omega}_{n_ensemble}_{theta}_test.csv"
+                print(min_distance_config)
+
+                if exists(comp_test_result_path):
+                    print(f"Skipping evaluation of min_distance on {ds_name} (lag {lag}) because it exits...")
+                    continue
+
+                if verbose:
+                    print(f"Evaluate min_distance (lag {lag}) on {ds_name}")
+
+                compositor = OS_PGSM(models, min_distance_config) 
+                try:
+                    preds = compositor.run(X_val, X_test)
+                except Exception:
+                    skipped_models.append([ds_name, n_omega, n_ensemble, theta, "min_distance"])
+                    continue
+                if np.any(np.isnan(preds)):
+                    skipped_models.append([ds_name, n_omega, n_ensemble, theta, "min_distance"])
+                    continue
+
+                np.savetxt(comp_test_result_path, preds)
+
+    np.savetxt("skipped_models.csv", skipped_models)
 
 
 def _get_m4_ds(name):
@@ -119,11 +174,21 @@ def _get_m4_full(part, index):
 
     return part + "_" + char + str(index)
 
-def main(lag, ds_names=None, override=None, verbose=None):
+def main(lag, is_m4, ds_names=None, override=None, verbose=None):
     if ds_names is not None:
         dataset_names = ds_names
     else:
-        dataset_names = implemented_datasets.keys()
+        if is_m4:
+            dataset_names = get_all_M4(lag)
+
+            # Preload all M4 datasets to memory
+            m4_hourly = M4_Hourly(path=m4_data_path)
+            m4_daily = M4_Daily(path=m4_data_path)
+            m4_monthly = M4_Monthly(path=m4_data_path)
+            m4_quaterly = M4_Quaterly(path=m4_data_path)
+            m4_weekly = M4_Weekly(path=m4_data_path)
+        else:
+            dataset_names = implemented_datasets.keys()
 
     if override is None:
         override = []
@@ -134,50 +199,41 @@ def main(lag, ds_names=None, override=None, verbose=None):
 
     for d_name in dataset_names:
 
-        # assume: m4_hourly, m4_weekly, m4_quaterly, m4_monthly etc.
-        if d_name.startswith("m4"):
-
-            if d_name.startswith("m4_quaterly"):
-                idx_range = list(range(5, 21))
+        if is_m4:
+            if "hourly" in d_name:
+                ds = m4_hourly
+            elif "daily" in d_name:
+                ds = m4_daily
+            elif "monthly" in d_name:
+                ds = m4_monthly
+            elif "quaterly" in d_name:
+                ds = m4_quaterly
+            elif "weekly" in d_name:
+                ds = m4_weekly
             else:
-                idx_range = list(range(1, 21))
-            ds = _get_m4_ds(d_name)(path=m4_data_path)
-            keys = ds.train_data.columns
-            for idx in idx_range:
-                # get all trained single models (some models will not train because the lag is too small)
-                ds_full_name = _get_m4_full(d_name, idx)
-                all_singles = glob.glob("models/*/{}_lag{}.pth".format(ds_full_name, lag))
+                raise NotImplementedError("Unknown M4 dataset", d_name)
+            
+            designator = d_name.split("_")[-1]
 
-                if len(all_singles) != len(list(single_models.keys())):
-                    print("Dataset {} {} with lag {} does not contain all single models, skipping".format(d_name, idx, lag))
-                    continue
+            models = []
+            for m_name in model_names:
+                models.append(load_model(m_name, d_name, lag, lag))
 
-                models = []
-                for m_name in model_names:
-                    # if m_name not in skip_models_composit:
-                    models.append(load_model(m_name, ds_full_name, lag, lag))
+            X_train, X_test = ds.get(designator)
+            X_train, X_val = train_test_split(X_train, split_percentages=(2.0/3.0, 1.0/3.0))
 
-                designator = keys[idx-1]
-                X_train, X_test = ds.get(designator)
-                X_train, X_val = train_test_split(X_train, split_percentages=(2.0/3.0, 1.0/3.0))
+            X_test = X_test.float()
+            X_val = X_val.float()
 
-                if len(X_val) <= lag_mapping[str(lag)]:
-                    print(designator, "is to short, skipping")
-                    continue
-
-                x_val_small, _ = sliding_split(X_val, lag, use_torch=True)
-                x_val_small = x_val_small.unsqueeze(1)
-
-                X_test = X_test.float()
-                X_val = X_val.float()
-                run_comparison(models, X_val, X_test, ds_full_name, lag)
+            run_single_models(models, list(model_names), X_val, X_test, d_name, lag, verbose=verbose)
+            run_comparison(models, X_val, X_test, d_name, lag, verbose=verbose)
 
         else:
             ds_full_name = d_name
             ds = implemented_datasets[d_name]['ds']()
 
             X = ds.torch()
-            [_, x_val_small], [_, _], _, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
+            [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=lag, val_input_width=lag_mapping[str(lag)], use_torch=True)
 
             models = []
             for m_name in model_names:
@@ -194,5 +250,6 @@ if __name__ == "__main__":
     parser.add_argument("--override", action="store", help="", nargs="+")
     parser.add_argument("--lag", action="store", help="choose lag to use for training", default=5, type=int)
     parser.add_argument("--verbose", help="print out all kinds of information", nargs="+")
+    parser.add_argument("--M4", action="store_const", const=True, default=False)
     args = parser.parse_args()
-    main(args.lag, ds_names=args.datasets, override=args.override, verbose=args.verbose)
+    main(args.lag, args.M4, ds_names=args.datasets, override=args.override, verbose=args.verbose)
