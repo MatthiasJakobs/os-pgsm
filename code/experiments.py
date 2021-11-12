@@ -1,22 +1,20 @@
-import torch
 import skorch
-from datasets import *
+from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
 from compositors import OS_PGSM
-from adaptive_mixtures import AdaptiveMixForecaster
+from itertools import product
 
-skip_models_composit = [Simple_LSTM, AdaptiveMixForecaster]
+ds_names =  _get_ds_names()
+ds_indices = list(range(5))
 
-# comps =                [KNN_ROC,    OS_PGSM_St,      OS_PGSM_Int,     OS_PGSM_Euc,               OS_PGSM_Int_Euc,           OS_PGSM,                    OS_PGSM_Per]
-# comp_names =           ['baseline', 'gradcam_large', 'gradcam_small', 'gradcam_large_euclidian', 'gradcam_small_euclidian', 'large_adaptive_hoeffding', 'large_adaptive_periodic']
+implemented_datasets = product(ds_names, ds_indices)
 
-m4_data_path = "/data/M4"
-
-def load_models_skorch(ds_name, ds_index):
+def load_models(ds_name, ds_index, return_names=False):
     all_models = []
+    all_model_names = []
     model_names = [(name, m_obj) for (name, m_obj) in single_models.items() if not "lstm" in name and not "adaptive" in name]
     for model_name, model_obj in model_names:
-        save_path = f"results/{ds_name}/{ds_index}_{model_name}.pth"
+        save_path = f"models/{ds_name}/{ds_index}_{model_name}.pth"
         nr_filters = model_obj["nr_filters"]
         hidden_states = model_obj["hidden_states"]
         model = skorch.NeuralNetRegressor(
@@ -28,46 +26,12 @@ def load_models_skorch(ds_name, ds_index):
         model.initialize()
         model.load_params(f_params=save_path)
         all_models.append(model.module_)
+        all_model_names.append(model_name)
 
+    if return_names:
+        return (all_models, all_model_names)
     return all_models
         
-def load_model(m_name, d_name, lag, ts_length):
-    m_obj = single_models[m_name]
-
-    if d_name.startswith("m4"):
-        batch_size = 500
-        epochs = 3000
-        lr = 1e-3
-    else:
-        d_obj = implemented_datasets[d_name]
-
-        try:
-            batch_size = d_obj["batch_size"]
-        except:
-            batch_size = 500
-        try:
-            epochs = d_obj["epochs"]
-        except:
-            epochs = 3000
-        try:
-            lr = d_obj["lr"]
-        except:
-            lr = 1e-3
-
-    nr_filters = m_obj["nr_filters"]
-    hidden_states = m_obj["hidden_states"]
-
-    if "lstm" in m_name or "adaptive_mixture" in m_name:
-        m = m_obj['obj'](lag, batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
-    elif "cnn" in m_name or "residual" in m_name:
-        m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, learning_rate=lr)
-    else:
-        m = m_obj['obj'](batch_size=batch_size, nr_filters=nr_filters, epochs=epochs, ts_length=ts_length, hidden_states=hidden_states, learning_rate=lr)
-
-    m.load_state_dict(torch.load("models/{}/{}_lag{}.pth".format(m_name, d_name, lag)))
-
-    return m
-
 single_models = {
     "rnn_a" : {
         "obj": Shallow_CNN_RNN,
@@ -234,157 +198,6 @@ single_models = {
         "nr_filters": 128,
         "hidden_states": 10
     },
-    "lstm_a" : {
-        "obj": Simple_LSTM,
-        "nr_filters": 128,
-        "hidden_states": 10
-    },
-    "adaptive_mixture": {
-        "obj": AdaptiveMixForecaster,
-        "nr_filters": None,
-        "hidden_states": None
-    }
-}
-
-implemented_datasets = {
-    "bike_total_rents": {
-        "ds": Bike_Total_Rents,
-        "epochs": 1500,
-        "batch_size": 50,
-        "lr": 1e-4,
-    },
-    "bike_registered": {
-        "ds": Bike_Registered,
-        "epochs": 1500,
-        "batch_size": 50,
-        "lr": 1e-4,
-    },
-    "bike_temperature": {
-        "ds": Bike_Temperature,
-        "epochs": 2500,
-        "batch_size": 50,
-        "lr": 1e-4,
-    },
-    "AbnormalHeartbeat": {
-        "ds": AbnormalHeartbeat,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "CatsDogs": {
-        "ds": CatsDogs,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Cricket": {
-        "ds": Cricket,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "EOGHorizontalSignal": {
-        "ds": EOGHorizontalSignal,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    # "EthanolConcentration": {
-    #     "ds": EthanolConcentration,
-    #     "epochs": 2500,
-    #     "batch_size": 100,
-    #     "lr": 1e-4,
-    # },
-    "Mallat": {
-        "ds": Mallat,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Phoneme": {
-        "ds": Phoneme,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "PigAirwayPressure": {
-        "ds": PigAirwayPressure,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Rock": {
-        "ds": Rock,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "SNP500": {
-        "ds": SNP500,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "NASDAQ": {
-        "ds": NASDAQ,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "DJI": {
-        "ds": DJI,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "NYSE": {
-        "ds": NYSE,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "RUSSELL": {
-        "ds": RUSSELL,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Energy_RH1": {
-        "ds": Energy_RH1,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Energy_RH2": {
-        "ds": Energy_RH2,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Energy_T4": {
-        "ds": Energy_T4,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "Energy_T5": {
-        "ds": Energy_T5,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-    "CloudCoverage": {
-        "ds": CloudCoverage,
-        "epochs": 2500,
-        "batch_size": 100,
-        "lr": 1e-4,
-    },
-}
-
-lag_mapping = {
-     "5": 25,
-    "10": 40,
-    "15": 60,
 }
 
 ###
@@ -401,14 +214,15 @@ lag_mapping = {
 def min_distance_drifts():
     return dict(
             k=5, 
-            omega=0.25, 
             n_omega=50, 
             z=25,
             small_z=1,
             roc_mean = True,
             delta=0.95,
             topm=10,
-            smoothing_threshold=0.5,
+            invert_relu=False,
+            roc_take_only_best=False,
+            smoothing_threshold=0.1,
             nr_clusters_single=1,
             nr_clusters_ensemble=5,
             drift_type="min_distance_change",
@@ -418,7 +232,6 @@ def min_distance_drifts():
 def ospgsm_original():
     return dict(
             k=5, 
-            omega=0.25, 
             n_omega=25,
             z=25,
             small_z=1,
@@ -426,17 +239,17 @@ def ospgsm_original():
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=True,
-            smoothing_threshold=0.5,
+            roc_take_only_best=False,
+            smoothing_threshold=0.1,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="hoeffding",
+            drift_type="ospgsm"
     )
 
 def ospgsm_per_original():
     return dict(
             k=5, 
-            omega=0.25, 
             n_omega=25,
             z=25,
             small_z=1,
@@ -444,17 +257,17 @@ def ospgsm_per_original():
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=True,
-            smoothing_threshold=0.5,
+            roc_take_only_best=False,
+            smoothing_threshold=0.1,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="periodic",
+            drift_type="ospgsm",
     )
 
 def ospgsm_st_original():
     return dict(
             k=5, 
-            omega=0.25, 
             n_omega=25,
             z=25,
             small_z=1,
@@ -462,29 +275,30 @@ def ospgsm_st_original():
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=True,
-            smoothing_threshold=0.5,
+            roc_take_only_best=False,
+            smoothing_threshold=0.1,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection=None,
+            drift_type="ospgsm",
     )
 
 def ospgsm_int_original():
     return dict(
             k=5, 
             omega=0.25, 
-            n_omega=25,
             z=25,
             small_z=5,
             roc_mean=False,
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=True,
-            smoothing_threshold=0.5,
+            roc_take_only_best=False,
+            smoothing_threshold=0.1,
             nr_clusters_single=1,
             nr_clusters_ensemble=1, 
             concept_drift_detection=None,
+            drift_type="ospgsm"
     )
 
 # All configurations used for experiments

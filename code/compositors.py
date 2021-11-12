@@ -1,7 +1,8 @@
-from os import close
+from os.path import exists
 import torch
 import numpy as np
 import time
+import json
 
 from utils import gradcam
 from datasets.utils import sliding_split, roc_matrix, roc_mean
@@ -17,7 +18,6 @@ class OS_PGSM:
         self.config = config
         # Assume identical lag for all modules no. Easily changable
         self.lag = config.get("k", 5)
-        self.big_lag = config.get("big_lag", 25)
         self.topm = config.get("topm", 1)
         self.nr_clusters_single = config.get("nr_clusters_single", 1) # Default value: No clustering
         self.threshold = config.get("smoothing_threshold", 0.5)
@@ -33,10 +33,39 @@ class OS_PGSM:
         self.random_state = random_state
         self.concept_drift_detection = config.get("concept_drift_detection", None)
         self.drift_type = config.get("drift_type", "ospgsm")
-        self.invert_loss = config.get("invert_loss", False)
 
         if self.topm != 1 and self.nr_clusters_ensemble != 1:
             assert self.nr_clusters_ensemble < self.topm
+
+    def save(self, path):
+        roc_list = []
+        for rocs in self.rocs:
+            if len(rocs) == 0:
+                roc_list.append([])
+                continue
+
+            roc_list.append([r.tolist() for r in rocs])
+
+        obj = {
+            "config": self.config,
+            "rocs": roc_list,
+            "random_state": self.random_state
+        }
+
+        with open(path, "w") as fp:
+            json.dump(obj, fp, indent=4)
+
+    @staticmethod
+    def load(path, models):
+        if not exists(path):
+            raise Exception(f"No compositor saved under {path}")
+        with open(path, "w") as fp:
+            obj = json.load(fp)
+
+        comp = OS_PGSM(models, obj["config"], random_state=obj["random_state"])
+        comp.rocs = obj["rocs"]
+
+        return comp
 
     def ensemble_predict(self, x, subset=None):
         if subset is None:

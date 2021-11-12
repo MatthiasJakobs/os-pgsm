@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from datasets import Bike_Total_Rents
-from datasets.utils import train_test_split, sliding_split
-
 class AdaptiveMixForecaster(nn.Module):
 
     def __init__(self, lag=5, nr_filters=None, nr_experts=8, ts_length=None, hidden_states=None, learning_rate=1e-3, batch_size=50, epochs=300):
@@ -125,13 +122,3 @@ class AdaptiveMixForecaster(nn.Module):
                     print(epoch_loss, epoch_correct / len(ds))
 
         return logs, best_epoch
-                
-
-if __name__ == "__main__":
-    X = Bike_Total_Rents().torch()
-    X_train, X_test = train_test_split(X, split_percentages=(0.75, 0.25))
-    X_train, X_val = train_test_split(X_train, split_percentages=(0.66, 0.33))
-    x_train, y_train = sliding_split(X_train, 5, use_torch=True)
-    x_val, y_val = sliding_split(X_val, 5, use_torch=True)
-    net = AdaptiveMixForecaster(5)
-    net.fit(x_train, y_train, X_val=x_val, y_val=y_val)

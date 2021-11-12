@@ -157,7 +157,6 @@ def extract_subseries(df, amount=5, length=500, random_state=0):
 
     return extracted_timeseries
 
-
 def calculate_dataset_seed(ds_name):
     return int(hashlib.md5((ds_name).encode("utf-8")).hexdigest(), 16) & 0xffffffff
 
