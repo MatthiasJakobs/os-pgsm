@@ -16,7 +16,6 @@ class OS_PGSM:
     def __init__(self, models, config, random_state=0):
         self.models = models
         self.config = config
-        # Assume identical lag for all modules no. Easily changable
         self.lag = config.get("k", 5)
         self.topm = config.get("topm", 1)
         self.nr_clusters_single = config.get("nr_clusters_single", 1) # Default value: No clustering
@@ -49,7 +48,12 @@ class OS_PGSM:
         obj = {
             "config": self.config,
             "rocs": roc_list,
-            "random_state": self.random_state
+            "random_state": self.random_state,
+            "test_forecasters": self.test_forecasters,
+            "drifts_detected": self.drifts_detected,
+            "ensemble_ambiguity": self.ensemble_ambiguities,
+            "padded_ambiguity": self.padded_ambiguities,
+            "distance_ambiguity": self.distance_ambiguities,
         }
 
         with open(path, "w") as fp:
@@ -64,8 +68,49 @@ class OS_PGSM:
 
         comp = OS_PGSM(models, obj["config"], random_state=obj["random_state"])
         comp.rocs = obj["rocs"]
+        comp.test_forecasters = obj["test_forecasters"]
+        comp.drifts_detected = obj["drifts_detected"]
+        comp.ensemble_ambiguities=obj["ensemble_ambiguity"] 
+        comp.distance_ambiguities=obj["distance_ambiguity"] 
+        comp.padded_ambiguities=obj["padded_ambiguity"] 
 
         return comp
+
+    # Meassure \sum_i^k (dtw(r_i, x) - \overbar{dtw(r, x)})^2
+    def distance_ambiguity(self, distances):
+        mean_distance = np.mean(distances)
+        return np.sum((distances-mean_distance)**2)
+
+    # Meassure \sum_i^k (f_i - f)^2
+    def ensemble_ambiguity(self, ensemble_models, x):
+        ambiguity = 0
+        f = self.ensemble_predict(x, subset=ensemble_models)
+        for m in ensemble_models:
+            ambiguity += (self.ensemble_predict(x, subset=[m]) - f)**2
+        return ambiguity
+
+    def padded_ambiguity(self, rocs, x):
+        x_length = max([len(r) for r in rocs])
+        #x_length = len(x.squeeze())
+
+        padded_rocs = torch.zeros((len(rocs), x_length))
+        for i, r in enumerate(rocs):
+            if len(r) == x_length:
+                padded_rocs[i] = r
+                continue
+            
+            length_of_padding = x_length - len(r)
+            assert length_of_padding > 0
+            right_padding = length_of_padding // 2
+            left_padding = length_of_padding - right_padding
+            padded_rocs[i] = torch.cat([torch.zeros((left_padding)), r, torch.zeros((right_padding))])
+
+        mean_r = torch.mean(padded_rocs, axis=0)
+        ambiguity = 0
+        for r in padded_rocs:
+            ambiguity += torch.sum((r - mean_r)**2)
+        
+        return ambiguity.item()
 
     def ensemble_predict(self, x, subset=None):
         if subset is None:
@@ -111,7 +156,6 @@ class OS_PGSM:
                 for i, rocs_i in enumerate(all_rocs):
                     if rocs_i is not None:
                         self.rocs[i].extend(rocs_i)
-
 
     def detect_concept_drift(self, residuals, ts_length, test_length, R=1):
         if self.concept_drift_detection is None:
@@ -170,7 +214,10 @@ class OS_PGSM:
                     self.rebuild_rocs(current_val)
 
             best_model = self.find_best_forecaster(x)
-            self.test_forecasters.append(best_model)
+            try:
+                self.test_forecasters.append(best_model.tolist())
+            except:
+                self.test_forecasters.append(best_model)
             predictions.append(self.ensemble_predict(x.unsqueeze(0).unsqueeze(0), subset=best_model))
 
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
@@ -178,6 +225,10 @@ class OS_PGSM:
     def adaptive_monitor_min_distance(self, X_val, X_test):
         self.test_forecasters = []
         self.drifts_detected = []
+
+        self.ensemble_ambiguities = []
+        self.padded_ambiguities = []
+        self.distance_ambiguities = []
 
         # Save all residuals to compute empirical mean
         all_residuals = []
@@ -189,18 +240,31 @@ class OS_PGSM:
         # Get min distance to current input pattern
         best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
 
-        # TODO: Is this the closest one?
+        # best_models and closest_rocs are sorted ascending, meaning that the best model is at the first position
         initial_min = dtw(closest_rocs[0], x)
 
-        model_subset = self.reduce_best_m(best_models, closest_rocs)
+        model_subset, small_closest_rocs = self.reduce_best_m(best_models, closest_rocs)
 
-        predictions.append(self.ensemble_predict(x.unsqueeze(0).unsqueeze(0), subset=model_subset))
+        x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+
+        self.ensemble_ambiguities.append(self.ensemble_ambiguity(model_subset, x_unsqueezed))
+        self.padded_ambiguities.append(self.padded_ambiguity(small_closest_rocs, x_unsqueezed))
+        self.distance_ambiguities.append(self.distance_ambiguity([dtw(r, x) for r in small_closest_rocs]))
+
+        try:
+            model_subset = model_subset.tolist()
+        except:
+            pass
+        self.test_forecasters.append([int(m) for m in model_subset])
+
+        predictions.append(self.ensemble_predict(x_unsqueezed, subset=model_subset))
 
         # For each new pattern: 
         for target_idx in range(self.lag+1, len(X_test)):
             f_test = (target_idx-self.lag)
             t_test = (target_idx)
             x = X_test[f_test:t_test] 
+            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
 
             #best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
 
@@ -218,11 +282,22 @@ class OS_PGSM:
                 self.drifts_detected.append(target_idx)
 
                 best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
-                model_subset = self.reduce_best_m(best_models, closest_rocs)
+                model_subset, small_closest_rocs = self.reduce_best_m(best_models, closest_rocs)
+
+                self.ensemble_ambiguities.append(self.ensemble_ambiguity(model_subset, x_unsqueezed))
+                self.padded_ambiguities.append(self.padded_ambiguity(small_closest_rocs, x_unsqueezed))
+                self.distance_ambiguities.append(self.distance_ambiguity([dtw(r, x) for r in small_closest_rocs]))
+
+                try:
+                    model_subset = model_subset.tolist()
+                except:
+                    pass
+                self.test_forecasters.append([int(m) for m in model_subset])
+
                 initial_min = new_min
                 residuals = []
 
-            predictions.append(self.ensemble_predict(x.unsqueeze(0).unsqueeze(0), subset=model_subset))
+            predictions.append(self.ensemble_predict(x_unsqueezed, subset=model_subset))
 
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
@@ -231,6 +306,11 @@ class OS_PGSM:
         with fixedseed(torch, seed=self.random_state):
             self.rebuild_rocs(X_val)
             self.shrink_rocs()        
+
+            self.ensemble_ambiguities = []
+            self.padded_ambiguities = []
+            self.distance_ambiguities = []
+            self.drifts_detected = []
 
             if self.concept_drift_detection is None:
                 return self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
@@ -244,15 +324,11 @@ class OS_PGSM:
 
             return forecast
 
-
     def reduce_best_m(self, best_models, clostest_rocs):
         if self.nr_clusters_ensemble == 1:
-            return best_models
+            return best_models, clostest_rocs
 
-        # Edge case where there were not enough topm models to allow for further shrinkage
-        if self.nr_clusters_ensemble > len(best_models):
-            print(f"WARNING: No clustering since nr_cluster_ensemble={self.nr_clusters_ensemble} > len(best_models)={len(best_models)}")
-            return best_models
+        new_closest_rocs = []
 
         # Cluster into the desired number of left-over models.
         tslearn_formatted = to_time_series_dataset(clostest_rocs)
@@ -264,22 +340,17 @@ class OS_PGSM:
         G = []
 
         for p in range(len(C_count)):
-            if C_count[p] == 1:
-                G.append(p)
-                continue
-            
             # Under all cluster members, find the one maximizing distance to current point
             cluster_member_indices = np.where(C == p)[0]
             # Since the best_models (and closest_rocs) are sorted by distance to x (ascending), 
             # choosing the last one will always maximize distance
             if len(cluster_member_indices) > 0:
-                G.append(cluster_member_indices[-1])
+                idx = cluster_member_indices[-1]
+                G.append(best_models[idx])
+                new_closest_rocs.append(clostest_rocs[idx])
 
-        if len(G) > 0:
-            return G
-        else:
-            return best_models
-        
+        return G, new_closest_rocs
+
     # TODO: Make faster
     def forecast_on_test(self, x_test, reuse_prediction=False, report_runtime=False):
         self.test_forecasters = []
@@ -302,9 +373,9 @@ class OS_PGSM:
             best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
 
             # Further reduce number of best models by clustering
-            best_models = self.reduce_best_m(best_models, closest_rocs)
+            best_models, _ = self.reduce_best_m(best_models, closest_rocs)
 
-            self.test_forecasters.append(best_models)
+            self.test_forecasters.append([int(m) for m in best_models])
             for i in range(len(best_models)):
                 predictions[x_i] += self.models[best_models[i]].predict(x.unsqueeze(0))
 
