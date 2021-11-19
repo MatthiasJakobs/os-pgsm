@@ -303,6 +303,7 @@ def ospgsm_int_original():
 
 # All configurations used for experiments
 ospgsm_experiment_configurations = {
+    "min_distance": min_distance_drifts,
     "ospgsm": ospgsm_original,
     "ospgsm_st": ospgsm_st_original,
     "ospgsm_int": ospgsm_int_original,

@@ -59,7 +59,7 @@ def run_single_models(models, model_names, X_val, X_test, ds_name, ds_index, los
 
 def run_comparison(models, X_val, X_test, ds_name, ds_index):
     n_omegas = [25, 30, 40, 50]
-    n_ensembles = [10, 15, 20]
+    n_ensembles = [3, 5, 10, 15]
 
     skipped_models = []
 
@@ -73,58 +73,33 @@ def run_comparison(models, X_val, X_test, ds_name, ds_index):
                 conf["topm"] = min(2*n_ensemble, 30)
                 conf["z"] = n_omega
 
-                #comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
-                comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_{n_omega}_{n_ensemble}_{theta}_test.csv"
-                print(conf)
+                config_name = f"{ospgsm_exp_name}_{n_omega}_{n_ensemble}"
 
-                if exists(comp_test_result_path):
-                    print(f"Skipping evaluation of {ospgsm_exp_name} on {ds_name} (lag {lag}) because it exits...")
+                comp_test_result_path = f"results/{ds_name}/{ds_index}_{config_name}_test.csv"
+                model_save_path = f"models/{ds_name}/{ds_index}_{config_name}.json"
+
+                if exists(comp_test_result_path) or exists(model_save_path):
+                    print(f"Skipping evaluation of {config_name} on {ds_name} because it exits...")
                     continue
 
-                if verbose:
-                    print(f"Evaluate {ospgsm_exp_name} (lag {lag}) on {ds_name}")
+                #print(conf)
+                print(f"Evaluate {config_name} on {ds_name}(#{ds_index})")
 
                 compositor = OS_PGSM(models, conf) 
                 try:
                     preds = compositor.run(X_val, X_test)
                 except Exception:
-                    skipped_models.append([ds_name, n_omega, n_ensemble, theta, ospgsm_exp_name])
+                    skipped_models.append([ds_name, n_omega, n_ensemble, ospgsm_exp_name])
                     continue
 
                 if np.any(np.isnan(preds)):
-                    skipped_models.append([ds_name, n_omega, n_ensemble, theta, ospgsm_exp_name])
+                    skipped_models.append([ds_name, n_omega, n_ensemble, ospgsm_exp_name])
                     continue
 
                 np.savetxt(comp_test_result_path, preds)
-    
-            min_distance_config = min_distance_drifts()
-            min_distance_config["n_omega"] = n_omega
-            min_distance_config["nr_clusters_ensemble"] = n_ensemble
-            min_distance_config["topm"] = 2*n_ensemble
-            min_distance_config["smoothing_threshold"] = theta
+                compositor.save(model_save_path)
 
-            #comp_test_result_path = f"results/lag{lag}/{ds_name}/{ospgsm_exp_name}_test.csv"
-            comp_test_result_path = f"results/lag{lag}/{ds_name}/min_distance_{n_omega}_{n_ensemble}_{theta}_test.csv"
-            print(min_distance_config)
-
-            if exists(comp_test_result_path):
-                print(f"Skipping evaluation of min_distance on {ds_name} (lag {lag}) because it exits...")
-                continue
-
-            if verbose:
-                print(f"Evaluate min_distance (lag {lag}) on {ds_name}")
-
-            compositor = OS_PGSM(models, min_distance_config) 
-            try:
-                preds = compositor.run(X_val, X_test)
-            except Exception:
-                skipped_models.append([ds_name, n_omega, n_ensemble, theta, "min_distance"])
-                continue
-            if np.any(np.isnan(preds)):
-                skipped_models.append([ds_name, n_omega, n_ensemble, theta, "min_distance"])
-                continue
-
-            np.savetxt(comp_test_result_path, preds)
+    print(skipped_models)
 
 
 def main():
@@ -137,7 +112,7 @@ def main():
         [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=5, val_input_width=25, use_torch=True)
     
         run_single_models(models, list(model_names), X_val, X_test, ds_name, ds_index)
-        #run_comparison(models, X_val, X_test, ds_name, ds_index, verbose=verbose)
+        run_comparison(models, X_val, X_test, ds_name, ds_index)
 
 if __name__ == "__main__":
     main()
