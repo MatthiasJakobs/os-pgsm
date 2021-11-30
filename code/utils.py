@@ -10,8 +10,50 @@ def calculate_single_seed(model_name, ds_name, lag):
 def ncl_seed(ds_name, lag):
     return int(hashlib.md5((ds_name+str(lag)).encode("utf-8")).hexdigest(), 16) & 0xffffffff
 
+def pad_vector(x, length):
+    if len(x) == length:
+        return x
+
+    if isinstance(x, np.ndarray):
+        cat_fn = np.concatenate
+        zeros_fn = np.zeros
+    if isinstance(x, torch.Tensor):
+        cat_fn = torch.cat
+        zeros_fn = torch.zeros
+    
+    length_of_padding = length - len(x)
+    assert length_of_padding > 0
+    right_padding = length_of_padding // 2
+    left_padding = length_of_padding - right_padding
+    padded_vector = cat_fn([zeros_fn((left_padding)), x, zeros_fn((right_padding))])
+
+    return padded_vector
+
+
 def dtw(s, t):
     return fastdtw(s, t)[0]
+
+def pad_euclidean(s, t):
+    length_to_pad = np.max([len(s), len(t)])
+    _s = pad_vector(s, length_to_pad)
+    _t = pad_vector(t, length_to_pad)
+    return euclidean(_s, _t)
+
+def cut_euclidean(s, t):
+    length_to_cut = np.min([len(s), len(t)])
+    _s = s[:length_to_cut]
+    _t = t[:length_to_cut]
+    return euclidean(_s, _t)
+
+def euclidean(s, t):
+    assert len(s) == len(t), "Inputs to euclidean need to be of same length"
+    if isinstance(s, torch.Tensor):
+        s = s.numpy()
+    if isinstance(t, torch.Tensor):
+        t = t.numpy()
+
+    return np.sum((s-t)**2)
+
 
 def calc_optimal_grid(n):
     # Try to distribute n images as best as possible

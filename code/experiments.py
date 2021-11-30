@@ -220,6 +220,8 @@ def min_distance_drifts():
             roc_mean = True,
             delta=0.95,
             topm=10,
+            distance_measure="euclidean",
+            split_around_max_gradcam=False,
             invert_relu=False,
             roc_take_only_best=False,
             smoothing_threshold=0.1,
@@ -287,6 +289,7 @@ def ospgsm_int_original():
     return dict(
             k=5, 
             omega=0.25, 
+            n_omega=25,
             z=25,
             small_z=5,
             roc_mean=False,
