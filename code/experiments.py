@@ -1,13 +1,9 @@
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import OS_PGSM
+from compositors import OS_PGSM, RandomSubsetEnsemble
+from ncl import NegCorLearning as NCL
 from itertools import product
-
-ds_names =  _get_ds_names()
-ds_indices = list(range(5))
-
-implemented_datasets = product(ds_names, ds_indices)
 
 def load_models(ds_name, ds_index, return_names=False):
     all_models = []
@@ -211,30 +207,33 @@ single_models = {
 # nr_clusters_ensemble: Number of desired clusters over all ensembles
 # concept_drift_detection: ["periodic", "hoeffding", None]
 ###
-def min_distance_drifts():
+def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clusters_ensemble=10, skip_drift_detection=False):
     return dict(
+            name=name,
             k=5, 
-            n_omega=50, 
+            n_omega=n_omega, 
             z=25,
             small_z=1,
             roc_mean = True,
             delta=0.95,
-            topm=10,
+            topm=topm,
             distance_measure="euclidean",
             split_around_max_gradcam=False,
             invert_relu=False,
             roc_take_only_best=False,
             smoothing_threshold=0.1,
             nr_clusters_single=1,
-            nr_clusters_ensemble=5,
+            nr_clusters_ensemble=nr_clusters_ensemble,
             drift_type="min_distance_change",
             concept_drift_detection="hoeffding",
+            skip_drift_detection=skip_drift_detection,
     )
 
-def ospgsm_original():
+def ospgsm_original(name="ospgsm", n_omega=60):
     return dict(
+            name=name,
             k=5, 
-            n_omega=25,
+            n_omega=n_omega,
             z=25,
             small_z=1,
             roc_mean = False,
@@ -249,10 +248,11 @@ def ospgsm_original():
             drift_type="ospgsm"
     )
 
-def ospgsm_per_original():
+def ospgsm_per_original(name="ospgsm-per", n_omega=60):
     return dict(
+            name=name,
             k=5, 
-            n_omega=25,
+            n_omega=n_omega,
             z=25,
             small_z=1,
             roc_mean = False,
@@ -267,10 +267,11 @@ def ospgsm_per_original():
             drift_type="ospgsm",
     )
 
-def ospgsm_st_original():
+def ospgsm_st_original(name="ospgsm-st", n_omega=60):
     return dict(
+            name=name,
             k=5, 
-            n_omega=25,
+            n_omega=n_omega,
             z=25,
             small_z=1,
             roc_mean = False,
@@ -285,11 +286,12 @@ def ospgsm_st_original():
             drift_type="ospgsm",
     )
 
-def ospgsm_int_original():
+def ospgsm_int_original(name="ospgsm-int", n_omega=60):
     return dict(
+            name=name,
             k=5, 
             omega=0.25, 
-            n_omega=25,
+            n_omega=n_omega,
             z=25,
             small_z=5,
             roc_mean=False,
@@ -304,13 +306,27 @@ def ospgsm_int_original():
             drift_type="ospgsm"
     )
 
-# All configurations used for experiments
-ospgsm_experiment_configurations = {
-    "min_distance": min_distance_drifts,
-    "ospgsm": ospgsm_original,
-    "ospgsm_st": ospgsm_st_original,
-    "ospgsm_int": ospgsm_int_original,
-}
+def random_subset_ensemble(name="Random", nr_clusters_ensemble=5):
+    return dict(
+        name=name,
+        nr_clusters_ensemble=nr_clusters_ensemble,
+    )
 
-val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
-test_keys = val_keys + ['pred_' + w for w in ospgsm_experiment_configurations.keys()]
+# All configurations used for OSPGSM experiments
+all_experiments = [
+    (OS_PGSM, ospgsm_original(name="ospgsm")),
+    (OS_PGSM, ospgsm_st_original(name="ospgsm_st")),
+    (OS_PGSM, ospgsm_int_original(name="ospgsm_int")),
+    (OS_PGSM, min_distance_drifts(name="min_distance-k=5", nr_clusters_ensemble=5)),
+    (OS_PGSM, min_distance_drifts(name="min_distance-k=10", nr_clusters_ensemble=10)),
+    (OS_PGSM, min_distance_drifts(name="min_distance-k=15", nr_clusters_ensemble=15)),
+    (OS_PGSM, min_distance_drifts(name="min_distance-k=20", nr_clusters_ensemble=20)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="random_5", nr_clusters_ensemble=5)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="random_10", nr_clusters_ensemble=10)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="random_15", nr_clusters_ensemble=15)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="random_20", nr_clusters_ensemble=20)),
+    (NCL, {"name":"ncl"}),
+]
+
+# val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
+# test_keys = val_keys + ['pred_' + w for w in ospgsm_experiment_configurations.keys()]

@@ -35,8 +35,7 @@ class OS_PGSM:
         self.concept_drift_detection = config.get("concept_drift_detection", None)
         self.drift_type = config.get("drift_type", "ospgsm")
         self.ambiguity_measure = config.get("ambiguity_measure", "euclidean")
-        self.distance_measure = config.get("distance_measure", "euclidean")
-        self.split_around_max_gradcam = config.get("split_around_max_gradcam", False)
+        self.skip_drift_detection = config.get("skip_drift_detection", False)
 
         # if self.topm != 1 and self.nr_clusters_ensemble != 1 and self.nr_clusters_ensemble is not None:
         #     assert self.nr_clusters_ensemble < self.topm
@@ -155,6 +154,9 @@ class OS_PGSM:
                         self.rocs[i].extend(rocs_i)
 
     def detect_concept_drift(self, residuals, ts_length, test_length, R=1):
+        if self.skip_drift_detection:
+            return False
+
         if self.concept_drift_detection is None:
             raise RuntimeError("Concept drift should be detected even though config does not specify method", self.concept_drift_detection)
 
@@ -166,6 +168,7 @@ class OS_PGSM:
             # Empirical range of residuals
             #R = 1
             #R = np.max(np.abs(residuals)) # R = 1 
+            empirical_range = np.max(np.abs(residuals))
 
             epsilon = np.sqrt((R**2)*np.log(1/self.delta) / (2*ts_length))
 
@@ -191,7 +194,7 @@ class OS_PGSM:
             f_test = (target_idx-self.lag)
             t_test = (target_idx)
             x = X_test[f_test:t_test] 
-
+  
             # TODO: Only sliding val, since default paramter
             val_start += 1
             val_stop += 1
@@ -219,67 +222,21 @@ class OS_PGSM:
 
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
-    def iterative_reduce_best(self, best_models, smallest_rocs, x):
-        # iteratively find k (number_of_desired_clusters) using our bound
-        min_nr_models = 2
-        max_nr_models = self.topm
-
-        for k in range(min_nr_models, max_nr_models):
-            clustered_models, clustered_rocs = self.cluster_rocs(best_models, smallest_rocs, k)
-            # padded_r = pad_vector(clustered_rocs[-1].squeeze(), len(x.squeeze()))
-            # delta = torch.sum((padded_r - x)**2).item()
-            delta = dtw(x.squeeze(), clustered_rocs[-1].squeeze())
-            if self.ambiguity_measure == "euclidean":
-                ambiguity = np.sqrt(self.padded_ambiguity(clustered_rocs, x) / k)
-            elif self.ambiguity_measure == "distance":
-                distances = [dtw(r, x) for r in clustered_rocs]
-                ambiguity = np.sqrt(self.distance_ambiguity(distances) / k)
-            if delta <= ambiguity:
-                #print(f"Smallest ambiguity {ambiguity:.3f} for delta={delta} with k={k} for topm={self.topm}")
-                self.length_of_best_roc.append(len(clustered_rocs[-1]))
-                return clustered_models, clustered_rocs
-
-        raise RuntimeError("Iterative method did not meet bound")
-
-    def find_closest_rocs(self, x, rocs, distance_fn=dtw):
+    def find_closest_rocs(self, x, rocs):
         closest_rocs = []
         closest_models = []
 
-        # Cutting
-        if distance_fn == euclidean:
-            length_to_cut = np.min([len(r) for model_r in rocs for r in model_r])
+        length_to_cut = np.min([len(r) for model_r in rocs for r in model_r])
         for model in range(len(rocs)):
             rs = rocs[model]
-            if distance_fn == euclidean:
-                distances = [distance_fn(x.squeeze()[:length_to_cut], r.squeeze()[:length_to_cut]) for r in rs]
-            else:
-                distances = [distance_fn(x.squeeze(), r.squeeze()) for r in rs]
+            distances = [euclidean(x.squeeze(), r.squeeze()) for r in rs]
             if len(distances) != 0:
-                if distance_fn == euclidean:
-                    closest_rocs.append(rs[np.argsort(distances)[0]][:length_to_cut])
-                else:
-                    closest_rocs.append(rs[np.argsort(distances)[0]])
+                closest_rocs.append(rs[np.argsort(distances)[0]])
                 closest_models.append(model)
         return closest_models, closest_rocs
 
 
-    def adaptive_monitor_min_distance(self, X_val, X_test):
-        self.length_of_best_roc = []
-        self.test_forecasters = []
-        self.drifts_detected = []
-
-        self.ensemble_ambiguities = []
-        self.padded_ambiguities = []
-        self.distance_ambiguities = []
-
-        if self.distance_measure == "euclidean":
-            distance_fn = euclidean
-        elif self.distance_measure == "dtw":
-            distance_fn = dtw
-        else:
-            raise RuntimeError("Unknown distance measure", self.distance_measure)
-
-        # rejection sampling
+    def roc_rejection_sampling(self):
         for i, model_rocs in enumerate(self.rocs):
             roc_lengths = np.array([len(r) for r in model_rocs])
             length_sample = np.where(roc_lengths == self.lag)[0]
@@ -288,136 +245,132 @@ class OS_PGSM:
             else:
                 self.rocs[i] = []
 
-        # Save all residuals to compute empirical mean
-        all_residuals = []
+    def adaptive_monitor_min_distance(self, X_val, X_test):
+        def get_topm(buffer, new):
+            if len(new) == 0:
+                if len(buffer) == 0:
+                    # Failsafe if the very first iteration results in a topm_models that is empty
+                    return self.rng.choice(33, size=3, replace=False).tolist()
+                return buffer
+            return new
 
-        residuals = []
-        predictions = []
-        
-        # Best models chosen after the last run / after the last drift detection
-        topm_buffer = []
-
-        for target_idx in range(self.lag, len(X_test)):
-            f_test = (target_idx-self.lag)
-            t_test = (target_idx)
-            x = X_test[f_test:t_test] 
-            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-
+        def recluster_and_reselect(x):
             # Find closest time series in each models RoC to x
-            closest_models, closest_rocs = self.find_closest_rocs(x, self.rocs, distance_fn=distance_fn)
+            closest_models, closest_rocs = self.find_closest_rocs(x, self.rocs)
 
             # Cluster all RoCs into nr_clusters_ensemble clusters
-            c_models, c_rocs = self.cluster_rocs(closest_models, closest_rocs, self.nr_clusters_ensemble, metric=self.distance_measure)
+            c_models, c_rocs = self.cluster_rocs(closest_models, closest_rocs, self.nr_clusters_ensemble)
 
             # Calculate upper and lower bound of delta (radius of circle)
-            cutting_length = np.min([len(r) for r in c_rocs] + [len(x)])
-            #padded_regions = [pad_vector(r, len(x)).numpy() if len(r) < len(x) else r[:len(x)].numpy() for r in c_rocs]
-            cut_regions = [r[:cutting_length].numpy() for r in c_rocs]
-            cut_x = x[:cutting_length]
-            lower_bound = 0.5 * np.sqrt(np.sum((cut_regions - np.mean(cut_regions))**2) / self.nr_clusters_ensemble)
-            upper_bound = np.sqrt(np.sum((cut_regions - cut_x.numpy())**2) / self.nr_clusters_ensemble)
+            numpy_regions = [r.numpy() for r in c_rocs]
+            lower_bound = 0.5 * np.sqrt(np.sum((numpy_regions - np.mean(numpy_regions, axis=0))**2) / self.nr_clusters_ensemble)
+            upper_bound = np.sqrt(np.sum((numpy_regions - x.numpy())**2) / self.nr_clusters_ensemble)
             assert lower_bound <= upper_bound, "Lower bound bigger than upper bound"
 
-            # Decide on a value for delta inside the bounds
-            delta = np.mean([lower_bound, upper_bound])
-
-            # Select top-m until their distance is outside of delta
+            # Select top-m until their distance is outside of the upper bounds
             topm_models = []
             topm_rocs = []
+            distances_to_x = np.zeros((len(c_rocs)))
             for idx, r in enumerate(c_rocs):
-                if distance_fn == euclidean:
-                    distance_to_x = distance_fn(r, cut_x)
-                else:
-                    distance_to_x = distance_fn(r, x)
+                distance_to_x = euclidean(r, x)
+                distances_to_x[idx] = distance_to_x
 
-                #if distance_to_x <= delta:
                 if distance_to_x <= upper_bound:
-                #if distance_to_x >= lower_bound and distance_to_x <= upper_bound:
                     topm_models.append(c_models[idx])
                     topm_rocs.append(r)
 
-            if len(topm_models) == 0:
-                if len(topm_buffer) == 0:
-                    topm_buffer = self.rng.choice(33, size=3, replace=False).tolist()
-                models_for_prediction = topm_buffer
-            else:
-                models_for_prediction = topm_models
-                topm_buffer = topm_models
+            return topm_models, topm_rocs 
 
-            #assert len(topm_models) > 0, "Top-m models empty"
+        self.length_of_best_roc = []
+        self.test_forecasters = []
+        self.drifts_type_1_detected = []
+        self.drifts_type_2_detected = []
 
-            predictions.append(self.ensemble_predict(x_unsqueezed, subset=models_for_prediction))
+        self.ensemble_ambiguities = []
+        self.padded_ambiguities = []
+        self.distance_ambiguities = []
 
-            self.test_forecasters.append(models_for_prediction)
+        self.random_selection = []
+        self.topm_empty = []
+        
+        predictions = []
+        mean_residuals = []
+        means = []
+        min_distances = []
+        ensemble_residuals = []
+        topm_buffer = []
 
-        return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
-        # Get min distance to current input pattern
-        best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
+        val_start = 0
+        val_stop = len(X_val) + self.lag
+        X_complete = torch.cat([X_val, X_test])
+        current_val = X_complete[val_start:val_stop]
 
-        # best_models and closest_rocs are sorted ascending, meaning that the best model is at the first position
-        initial_min = dtw(closest_rocs[0], x)
+        # Remove all RoCs that have not length self.lag
+        self.roc_rejection_sampling()
 
+        means = [torch.mean(current_val).numpy()]
+
+        # First iteration 
+        x = X_test[:self.lag]
         x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+        topm, topm_rocs = recluster_and_reselect(x)
 
-        if self.nr_clusters_ensemble is None:
-            model_subset, small_closest_rocs = self.iterative_reduce_best(best_models, closest_rocs, x_unsqueezed)
-        else:
-            model_subset, small_closest_rocs = self.reduce_best_m(best_models, closest_rocs, self.nr_clusters_ensemble)
+        # Compute min distance to x from the all models
+        _, closest_rocs = self.find_closest_rocs(x, self.rocs)
+        mu_d = np.min([euclidean(r, x) for r in closest_rocs])
 
-        self.ensemble_ambiguities.append(self.ensemble_ambiguity(model_subset, x_unsqueezed))
-        self.padded_ambiguities.append(self.padded_ambiguity(small_closest_rocs, x_unsqueezed))
-        self.distance_ambiguities.append(self.distance_ambiguity([dtw(r, x) for r in small_closest_rocs]))
+        # topm_buffer contains the models used for prediction
+        topm_buffer = get_topm(topm_buffer, topm)
 
-        try:
-            model_subset = model_subset.tolist()
-        except:
-            pass
-        self.test_forecasters.append([int(m) for m in model_subset])
+        predictions.append(self.ensemble_predict(x_unsqueezed, subset=topm_buffer))
+        self.test_forecasters.append(topm_buffer)
 
-        predictions.append(self.ensemble_predict(x_unsqueezed, subset=model_subset))
-
-        # For each new pattern: 
+        # Subsequent iterations
         for target_idx in range(self.lag+1, len(X_test)):
             f_test = (target_idx-self.lag)
             t_test = (target_idx)
             x = X_test[f_test:t_test] 
             x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+            val_start += 1
+            val_stop += 1
+            
+            current_val = X_complete[val_start:val_stop]
+            means.append(torch.mean(current_val).numpy())
+            mean_residuals.append(means[-1]-means[-2])
 
-            #best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
+            _, closest_rocs = self.find_closest_rocs(x, self.rocs)
+            ensemble_residuals.append(mu_d - np.min([euclidean(r, x) for r in closest_rocs]))
 
-            # calc min distance and compute residuals
-            new_min = dtw(closest_rocs[0], x)
-            residuals.append(new_min - initial_min)
-            all_residuals.append(new_min - initial_min)
+            if len(mean_residuals) > 1:
+                drift_type_one = self.detect_concept_drift(mean_residuals, len(current_val), len(X_test), R=1.5)
+            else:
+                drift_type_one = False
 
-            empirical_range = np.abs(np.min(all_residuals) - np.max(all_residuals))
+            if len(ensemble_residuals) > 1:
+                drift_type_two = self.detect_concept_drift(ensemble_residuals, len(current_val), len(X_test), R=100)
+            else:
+                drift_type_two = False
 
-            # pass residuals into drift detection
-            if len(residuals) > 1 and self.detect_concept_drift(residuals, len(residuals), len(X_test), R=empirical_range):
-                # if drift: recreate ensemble and set new min distance for comparison
-                #print("Drift detected at iteration", target_idx, residuals)
-                self.drifts_detected.append(target_idx)
+            if drift_type_one:
+                self.drifts_type_1_detected.append(target_idx)
+                val_start = val_stop - len(X_val) - self.lag
+                current_val = X_complete[val_start:val_stop]
+                mean_residuals = []
+                means = [torch.mean(current_val).numpy()]
+                self.rebuild_rocs(current_val)
+                self.roc_rejection_sampling()
 
-                best_models, closest_rocs = self.find_best_forecaster(x, return_closest_roc=True)
-                if self.nr_clusters_ensemble is None:
-                    model_subset, small_closest_rocs = self.iterative_reduce_best(best_models, closest_rocs, x_unsqueezed)
-                else:
-                    model_subset, small_closest_rocs = self.reduce_best_m(best_models, closest_rocs, self.nr_clusters_ensemble)
+            if drift_type_one or drift_type_two:
+                topm, topm_rocs = recluster_and_reselect(x)
+                if drift_type_two:
+                    self.drifts_type_2_detected.append(target_idx)
+                    _, closest_rocs = self.find_closest_rocs(x, self.rocs)
+                    mu_d = np.min([euclidean(r, x) for r in closest_rocs])
+                    ensemble_residuals = []
+                topm_buffer = get_topm(topm_buffer, topm)
 
-                self.ensemble_ambiguities.append(self.ensemble_ambiguity(model_subset, x_unsqueezed))
-                self.padded_ambiguities.append(self.padded_ambiguity(small_closest_rocs, x_unsqueezed))
-                self.distance_ambiguities.append(self.distance_ambiguity([dtw(r, x) for r in small_closest_rocs]))
-
-                try:
-                    model_subset = model_subset.tolist()
-                except:
-                    pass
-                self.test_forecasters.append([int(m) for m in model_subset])
-
-                initial_min = new_min
-                residuals = []
-
-            predictions.append(self.ensemble_predict(x_unsqueezed, subset=model_subset))
+            predictions.append(self.ensemble_predict(x_unsqueezed, subset=topm_buffer))
+            self.test_forecasters.append(topm_buffer)
 
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
@@ -465,6 +418,7 @@ class OS_PGSM:
             # Since the best_models (and closest_rocs) are sorted by distance to x (ascending), 
             # choosing the first one will always minimize distance
             if len(cluster_member_indices) > 0:
+                #idx = cluster_member_indices[-1]
                 idx = cluster_member_indices[0]
                 G.append(best_models[idx])
                 new_closest_rocs.append(clostest_rocs[idx])
@@ -599,34 +553,9 @@ class OS_PGSM:
                         continue
                     normalized = cam / max_r
 
-                    # Find the top value (which is one because we normalized) and take the `lag` values around it (plus shifting if it is at the front / end)
-                    if self.split_around_max_gradcam:
-                        condition = False
-
-                        biggest_index = np.argmax(normalized)
-                        size_of_roc = self.lag
-                        assert size_of_roc % 2 == 1, "For splitting around the max value, the lag must be odd"
-                        padding = size_of_roc // 2
-
-                        w_start = padding
-                        w_end = len(normalized) - padding - 1
-
-                        min_distance = 100
-                        min_idx = 2
-
-                        for idx in range(w_start, w_end):
-                            distance = abs(idx-biggest_index)
-                            if distance < min_distance:
-                                min_distance = distance
-                                min_idx = idx
-
-                        roc_indices = np.array(range(min_idx - padding, min_idx + padding + 1))
-                        rocs.append(x[roc_indices])
-
-                    else:
-                        # Extract all subseries divided by zeros
-                        after_threshold = normalized * (normalized > self.threshold)
-                        condition = len(np.nonzero(after_threshold)[0]) > 0
+                    # Extract all subseries divided by zeros
+                    after_threshold = normalized * (normalized > self.threshold)
+                    condition = len(np.nonzero(after_threshold)[0]) > 0
 
                 if condition:
                     indidces = split_array_at_zero(after_threshold)
@@ -665,45 +594,34 @@ class OS_PGSM:
 
         return top_models
 
-class Inv_OS_PGSM(OS_PGSM):
 
-    def calculate_rocs(self, x, cams, best_model): 
-        def split_array_at_zero(arr):
-            indices = np.where(arr != 0)[0]
-            splits = []
-            i = 0
-            while i+1 < len(indices):
-                start = i
-                stop = start
-                j = i+1
-                while j < len(indices):
-                    if indices[j] - indices[stop] == 1:
-                        stop = j
-                        j += 1
-                    else:
-                        break
+# Baselines for comparison
 
-                if start != stop:
-                    splits.append((indices[start], indices[stop]))
-                    i = stop
-                else:
-                    i += 1
 
-            return splits
+class RandomSubsetEnsemble(OS_PGSM):
 
-        cams = cams[best_model] 
-        rocs = []
+    def __init__(self, models, config, random_state=0):
+        self.models = models
+        self.config = config
+        self.rng = np.random.RandomState(random_state)
 
-        if len(cams.shape) == 1:
-            cams = np.expand_dims(cams, 0)
+    def run(self, X_val, X_test):
+        lag = 5
+        predictions = []
 
-        for offset, cam in enumerate(cams):
-            after_threshold = (cam == 0).astype(np.int8)
-            if np.sum(after_threshold) > 0:
-                indidces = split_array_at_zero(after_threshold)
-                for (f, t) in indidces:
-                    if t-f >= 2:
-                        rocs.append(x[f+offset:(t+offset+1)])
-        
-        return rocs
+        self.test_forecasters = []
 
+        for target_idx in range(lag, len(X_test)):
+            f_test = (target_idx-lag)
+            t_test = (target_idx)
+            x = X_test[f_test:t_test] 
+            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+
+            # Random subset
+            k = self.rng.choice(self.config["nr_clusters_ensemble"], 1, replace=False)+1
+            forecasters = self.rng.choice(len(self.models), k, replace=False)
+            predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
+
+            self.test_forecasters.append(forecasters)
+
+        return np.concatenate([X_test[:lag].numpy(), np.array(predictions)])

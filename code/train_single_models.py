@@ -13,18 +13,15 @@ from experiments import single_models
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GridSearchCV
 from utils import calculate_single_seed
-from datasets.monash_forecasting import load_dataset, _get_ds_names
+from datasets.dataloading import load_dataset, implemented_datasets
 from single_models import BaselineLastValue
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from skorch.callbacks import LRScheduler, EarlyStopping
 
 warnings.filterwarnings("ignore")
 
-ds_names =  _get_ds_names()
-ds_indices = list(range(5))
 single_model_list = single_models.items()
-
-all_configs = product(ds_names, ds_indices, single_model_list)
+all_configs = product(implemented_datasets, single_model_list)
 
 def load_data(ds_name, ds_index):
     X = torch.from_numpy(load_dataset(ds_name, ds_index)).float()
@@ -34,6 +31,7 @@ def load_data(ds_name, ds_index):
 
     return x_train, y_train, x_val, y_val, x_test, y_test
 
+# DEPRECATED
 def test_performance():
     for ds_name in ds_names:
         fig, ax = plt.subplots(1,5, figsize=(14, 2))
@@ -85,10 +83,12 @@ def test_performance():
 
 def train():
 
-    for ds_name, ds_index, (model_name, model_obj) in all_configs:
+    for (ds_name, ds_index), (model_name, model_obj) in all_configs:
         save_path = f"models/{ds_name}/{ds_index}_{model_name}.pth"
         if exists(save_path):
+            print(save_path, "exists, skipping...")
             continue
+        print("Training", save_path)
         X_train, y_train, X_val, y_val, X_test, y_test = load_data(ds_name, ds_index)
         X = torch.cat([X_train, X_val])
         y = torch.cat([y_train, y_val])
@@ -126,4 +126,4 @@ def train():
                 
 if __name__ == "__main__":
     train()
-    test_performance()
+    #test_performance()
