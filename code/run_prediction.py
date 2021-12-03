@@ -70,15 +70,14 @@ def run_single_models(models, model_names, X_val, X_test, ds_name, ds_index, los
 def save_test_forecasters(comp, path):
     test_forecasters = comp.test_forecasters
     x_length = len(test_forecasters)
-    print(test_forecasters)
 
-    binary_list = np.zeros((x_length, len(comp.rocs)), dtype=np.int8)
+    binary_list = np.zeros((x_length, len(comp.models)), dtype=np.int8)
 
     for i in range(x_length):
         for forecaster in test_forecasters[i]:
             binary_list[i][forecaster] = 1
 
-    np.savetxt(path, binary_list, header=",".join([f"model_{i}" for i in range(len(comp.rocs))]), comments="", delimiter=",")
+    np.savetxt(path, binary_list, header=",".join([f"model_{i}" for i in range(len(comp.models))]), comments="", delimiter=",")
 
 def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_run=False, override=False):
 
