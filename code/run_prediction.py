@@ -1,3 +1,4 @@
+from posixpath import join
 import traceback
 import numpy as np
 from numpy.core.fromnumeric import trace
@@ -66,6 +67,19 @@ def run_single_models(models, model_names, X_val, X_test, ds_name, ds_index, los
         np.savetxt(test_result_path, preds_test)
         np.savetxt(val_result_path, preds_val)
 
+def save_test_forecasters(comp, path):
+    test_forecasters = comp.test_forecasters
+    x_length = len(test_forecasters)
+    print(test_forecasters)
+
+    binary_list = np.zeros((x_length, len(comp.rocs)), dtype=np.int8)
+
+    for i in range(x_length):
+        for forecaster in test_forecasters[i]:
+            binary_list[i][forecaster] = 1
+
+    np.savetxt(path, binary_list, header=",".join([f"model_{i}" for i in range(len(comp.rocs))]), comments="", delimiter=",")
+
 def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_run=False, override=False):
 
     test_result_path = f"results/main_experiments/test_{ds_name}_#{ds_index}.csv"
@@ -93,7 +107,8 @@ def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_ru
         preds_val = np.concatenate([np.squeeze(x_val_small[0]), preds_val])
         df_val[m_name] = preds_val
     
-    df_val.to_csv(val_result_path, index=False)
+    if not dry_run:
+        df_val.to_csv(val_result_path, index=False)
 
     # Run all configurations of our ospgsm algorithm
     for comp_class, exp_config in all_experiments:
@@ -116,7 +131,10 @@ def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_ru
 
         print(f"Evaluated {config_name} on {ds_name}(#{ds_index})")
 
-        df_test.to_csv(test_result_path, index=False)
+        if not dry_run:
+            df_test.to_csv(test_result_path, index=False)
+            if not isinstance(compositor, NegCorLearning):
+                save_test_forecasters(compositor, f"results/test_forecasters/{ds_name}_{ds_index}_{config_name}.csv")
 
 def remove_compositors(ds_name, ds_index, config_names):
     test_result_path = f"results/main_experiments/test_{ds_name}_#{ds_index}.csv"
