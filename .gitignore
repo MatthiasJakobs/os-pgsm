@@ -8,3 +8,7 @@ results_*.zip
 !.placeholder
 *.tsf
 *.json
+.nfs*
+plots/*.png
+results/main_experiments/*.csv
+results/main_experiments/*.zip
