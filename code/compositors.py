@@ -36,6 +36,8 @@ class OS_PGSM:
         self.drift_type = config.get("drift_type", "ospgsm")
         self.ambiguity_measure = config.get("ambiguity_measure", "euclidean")
         self.skip_drift_detection = config.get("skip_drift_detection", False)
+        self.skip_topm = config.get("skip_topm", False)
+        self.skip_clustering = config.get("skip_clustering", False)
 
         # if self.topm != 1 and self.nr_clusters_ensemble != 1 and self.nr_clusters_ensemble is not None:
         #     assert self.nr_clusters_ensemble < self.topm
@@ -235,6 +237,20 @@ class OS_PGSM:
                 closest_models.append(model)
         return closest_models, closest_rocs
 
+    def select_topm(self, models, rocs, x, upper_bound):
+        # Select top-m until their distance is outside of the upper bounds
+        topm_models = []
+        topm_rocs = []
+        distances_to_x = np.zeros((len(rocs)))
+        for idx, r in enumerate(rocs):
+            distance_to_x = euclidean(r, x)
+            distances_to_x[idx] = distance_to_x
+
+            if distance_to_x <= upper_bound:
+                topm_models.append(models[idx])
+                topm_rocs.append(r)
+
+        return topm_models, topm_rocs
 
     def roc_rejection_sampling(self):
         for i, model_rocs in enumerate(self.rocs):
@@ -256,30 +272,23 @@ class OS_PGSM:
 
         def recluster_and_reselect(x):
             # Find closest time series in each models RoC to x
-            closest_models, closest_rocs = self.find_closest_rocs(x, self.rocs)
+            models, rocs = self.find_closest_rocs(x, self.rocs)
 
             # Cluster all RoCs into nr_clusters_ensemble clusters
-            c_models, c_rocs = self.cluster_rocs(closest_models, closest_rocs, self.nr_clusters_ensemble)
+            if not self.skip_clustering:
+                models, rocs = self.cluster_rocs(models, rocs, self.nr_clusters_ensemble)
 
             # Calculate upper and lower bound of delta (radius of circle)
-            numpy_regions = [r.numpy() for r in c_rocs]
+            numpy_regions = [r.numpy() for r in rocs]
             lower_bound = 0.5 * np.sqrt(np.sum((numpy_regions - np.mean(numpy_regions, axis=0))**2) / self.nr_clusters_ensemble)
             upper_bound = np.sqrt(np.sum((numpy_regions - x.numpy())**2) / self.nr_clusters_ensemble)
             assert lower_bound <= upper_bound, "Lower bound bigger than upper bound"
 
-            # Select top-m until their distance is outside of the upper bounds
-            topm_models = []
-            topm_rocs = []
-            distances_to_x = np.zeros((len(c_rocs)))
-            for idx, r in enumerate(c_rocs):
-                distance_to_x = euclidean(r, x)
-                distances_to_x[idx] = distance_to_x
+            # Select topm models according to upper bound
+            if not self.skip_topm:
+                models, rocs = self.select_topm(models, rocs, x, upper_bound)
 
-                if distance_to_x <= upper_bound:
-                    topm_models.append(c_models[idx])
-                    topm_rocs.append(r)
-
-            return topm_models, topm_rocs 
+            return models, rocs 
 
         self.length_of_best_roc = []
         self.test_forecasters = []
