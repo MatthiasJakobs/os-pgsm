@@ -38,6 +38,8 @@ class OS_PGSM:
         self.skip_drift_detection = config.get("skip_drift_detection", False)
         self.skip_topm = config.get("skip_topm", False)
         self.skip_clustering = config.get("skip_clustering", False)
+        self.skip_type1 = config.get("skip_type1", False)
+        self.skip_type2 = config.get("skip_type2", False)
 
         # if self.topm != 1 and self.nr_clusters_ensemble != 1 and self.nr_clusters_ensemble is not None:
         #     assert self.nr_clusters_ensemble < self.topm
@@ -359,6 +361,10 @@ class OS_PGSM:
                 drift_type_two = self.detect_concept_drift(ensemble_residuals, len(current_val), len(X_test), R=100)
             else:
                 drift_type_two = False
+
+            # Allow for skipping either drift detection part
+            drift_type_one = drift_type_one or self.skip_type1
+            drift_type_two = drift_type_one or self.skip_type2
 
             if drift_type_one:
                 self.drifts_type_1_detected.append(target_idx)
