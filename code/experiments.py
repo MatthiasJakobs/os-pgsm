@@ -207,7 +207,7 @@ single_models = {
 # nr_clusters_ensemble: Number of desired clusters over all ensembles
 # concept_drift_detection: ["periodic", "hoeffding", None]
 ###
-def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clusters_ensemble=10, skip_drift_detection=False):
+def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clusters_ensemble=10, skip_drift_detection=False, skip_topm=False, skip_clustering=False):
     return dict(
             name=name,
             k=5, 
@@ -227,6 +227,8 @@ def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clus
             drift_type="min_distance_change",
             concept_drift_detection="hoeffding",
             skip_drift_detection=skip_drift_detection,
+            skip_topm=skip_topm,
+            skip_clustering=skip_clustering,
     )
 
 def ospgsm_original(name="ospgsm", n_omega=60):
@@ -321,6 +323,8 @@ all_experiments = [
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=10", nr_clusters_ensemble=10)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=15", nr_clusters_ensemble=15)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=20", nr_clusters_ensemble=20)),
+    # (OS_PGSM, min_distance_drifts(name="oep_roc-skip_topm", nr_clusters_ensemble=10, skip_topm=True)), # TODO: Set k correctly
+    # (OS_PGSM, min_distance_drifts(name="oep_roc-skip_clustering", nr_clusters_ensemble=10, skip_clustering=True)), # TODO: Set k correctly
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_5", nr_clusters_ensemble=5)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_10", nr_clusters_ensemble=10)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_15", nr_clusters_ensemble=15)),
