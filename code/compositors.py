@@ -157,7 +157,7 @@ class OS_PGSM:
                     if rocs_i is not None:
                         self.rocs[i].extend(rocs_i)
 
-    def detect_concept_drift(self, residuals, ts_length, test_length, R=1):
+    def detect_concept_drift(self, residuals, ts_length, test_length, drift_type=None, R=1):
         if self.skip_drift_detection:
             return False
 
@@ -165,14 +165,16 @@ class OS_PGSM:
             raise RuntimeError("Concept drift should be detected even though config does not specify method", self.concept_drift_detection)
 
         if self.concept_drift_detection == "periodic":
-            return len(residuals) >= int(test_length / 10.0)
+            if drift_type is None:
+                return len(residuals) >= int(test_length / 10.0)
+            else:
+                return len(residuals) >= 5
         elif self.concept_drift_detection == "hoeffding":
             residuals = np.array(residuals)
 
             # Empirical range of residuals
             #R = 1
             #R = np.max(np.abs(residuals)) # R = 1 
-            empirical_range = np.max(np.abs(residuals))
 
             epsilon = np.sqrt((R**2)*np.log(1/self.delta) / (2*ts_length))
 
@@ -353,12 +355,12 @@ class OS_PGSM:
             ensemble_residuals.append(mu_d - np.min([euclidean(r, x) for r in closest_rocs]))
 
             if len(mean_residuals) > 1:
-                drift_type_one = self.detect_concept_drift(mean_residuals, len(current_val), len(X_test), R=1.5)
+                drift_type_one = self.detect_concept_drift(mean_residuals, len(current_val), len(X_test), drift_type="type1", R=1.5)
             else:
                 drift_type_one = False
 
             if len(ensemble_residuals) > 1:
-                drift_type_two = self.detect_concept_drift(ensemble_residuals, len(current_val), len(X_test), R=100)
+                drift_type_two = self.detect_concept_drift(ensemble_residuals, len(current_val), len(X_test), drift_type="type2", R=100)
             else:
                 drift_type_two = False
 
