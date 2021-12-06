@@ -1,7 +1,7 @@
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline
+from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline, RandomTopM, All_Ensemble
 from ncl import NegCorLearning as NCL
 from itertools import product
 
@@ -323,14 +323,25 @@ def random_subset_ensemble(name="Random", nr_clusters_ensemble=5):
         nr_clusters_ensemble=nr_clusters_ensemble,
     )
 
+def random_topm(name="random_topm", nr_clusters_ensemble=15):
+    base = min_distance_drifts().copy()
+    base.update({
+        "name": name,
+        "nr_clusters_ensemble": nr_clusters_ensemble,
+        "roc_mean": True,
+        "skip_clustering": False,
+        "skip_topm": True,
+    })
+    return base
+
 # All configurations used for OSPGSM experiments
 all_experiments = [
     (OS_PGSM, ospgsm_original(name="ospgsm")),
     (OS_PGSM, ospgsm_st_original(name="ospgsm_st")),
     (OS_PGSM, ospgsm_int_original(name="ospgsm_int")),
+    (OS_PGSM, min_distance_drifts(name="oep_roc-k=15")),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=5", nr_clusters_ensemble=5)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=10", nr_clusters_ensemble=10)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-k=15", nr_clusters_ensemble=15)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=20", nr_clusters_ensemble=20)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-skip_topm", skip_topm=True)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-skip_clustering", skip_clustering=True)),
@@ -343,7 +354,9 @@ all_experiments = [
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_15", nr_clusters_ensemble=15)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_20", nr_clusters_ensemble=20)),
     (NCL, {"name":"ncl"}),
-    (SimpleLSTMBaseline, {"name":"simple-lstm"})
+    (All_Ensemble, {"name":"all_ensemble"}),
+    (SimpleLSTMBaseline, {"name":"simple-lstm"}),
+    (RandomTopM, random_topm(name="random_topm-k=15", nr_clusters_ensemble=15)),
 ]
 
 # val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]

@@ -266,6 +266,26 @@ class OS_PGSM:
             else:
                 self.rocs[i] = []
 
+    def recluster_and_reselect(self, x):
+        # Find closest time series in each models RoC to x
+        models, rocs = self.find_closest_rocs(x, self.rocs)
+
+        # Cluster all RoCs into nr_clusters_ensemble clusters
+        if not self.skip_clustering:
+            models, rocs = self.cluster_rocs(models, rocs, self.nr_clusters_ensemble)
+
+        # Calculate upper and lower bound of delta (radius of circle)
+        numpy_regions = [r.numpy() for r in rocs]
+        lower_bound = 0.5 * np.sqrt(np.sum((numpy_regions - np.mean(numpy_regions, axis=0))**2) / self.nr_clusters_ensemble)
+        upper_bound = np.sqrt(np.sum((numpy_regions - x.numpy())**2) / self.nr_clusters_ensemble)
+        assert lower_bound <= upper_bound, "Lower bound bigger than upper bound"
+
+        # Select topm models according to upper bound
+        if not self.skip_topm:
+            models, rocs = self.select_topm(models, rocs, x, upper_bound)
+
+        return models, rocs 
+
     def adaptive_monitor_min_distance(self, X_val, X_test):
         def get_topm(buffer, new):
             if len(new) == 0:
@@ -274,26 +294,6 @@ class OS_PGSM:
                     return self.rng.choice(33, size=3, replace=False).tolist()
                 return buffer
             return new
-
-        def recluster_and_reselect(x):
-            # Find closest time series in each models RoC to x
-            models, rocs = self.find_closest_rocs(x, self.rocs)
-
-            # Cluster all RoCs into nr_clusters_ensemble clusters
-            if not self.skip_clustering:
-                models, rocs = self.cluster_rocs(models, rocs, self.nr_clusters_ensemble)
-
-            # Calculate upper and lower bound of delta (radius of circle)
-            numpy_regions = [r.numpy() for r in rocs]
-            lower_bound = 0.5 * np.sqrt(np.sum((numpy_regions - np.mean(numpy_regions, axis=0))**2) / self.nr_clusters_ensemble)
-            upper_bound = np.sqrt(np.sum((numpy_regions - x.numpy())**2) / self.nr_clusters_ensemble)
-            assert lower_bound <= upper_bound, "Lower bound bigger than upper bound"
-
-            # Select topm models according to upper bound
-            if not self.skip_topm:
-                models, rocs = self.select_topm(models, rocs, x, upper_bound)
-
-            return models, rocs 
 
         self.length_of_best_roc = []
         self.test_forecasters = []
@@ -327,7 +327,7 @@ class OS_PGSM:
         # First iteration 
         x = X_test[:self.lag]
         x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-        topm, topm_rocs = recluster_and_reselect(x)
+        topm, topm_rocs = self.recluster_and_reselect(x)
 
         # Compute min distance to x from the all models
         _, closest_rocs = self.find_closest_rocs(x, self.rocs)
@@ -379,7 +379,7 @@ class OS_PGSM:
                 self.roc_rejection_sampling()
 
             if drift_type_one or drift_type_two:
-                topm, topm_rocs = recluster_and_reselect(x)
+                topm, topm_rocs = self.recluster_and_reselect(x)
                 if drift_type_two:
                     self.drifts_type_2_detected.append(target_idx)
                     _, closest_rocs = self.find_closest_rocs(x, self.rocs)
@@ -649,6 +649,54 @@ class RandomSubsetEnsemble(OS_PGSM):
             # Random subset
             k = self.rng.choice(self.config["nr_clusters_ensemble"], 1, replace=False)+1
             forecasters = self.rng.choice(len(self.models), k, replace=False)
+            predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
+
+            self.test_forecasters.append(forecasters)
+
+        return np.concatenate([X_test[:lag].numpy(), np.array(predictions)])
+
+class RandomTopM(OS_PGSM):
+
+    def run(self, X_val, X_test):
+        lag = 5
+        predictions = []
+
+        self.test_forecasters = []
+        self.rebuild_rocs(X_val)
+        self.roc_rejection_sampling()
+
+        for target_idx in range(lag, len(X_test)):
+            f_test = (target_idx-lag)
+            t_test = (target_idx)
+            x = X_test[f_test:t_test] 
+            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+
+            models, _ = self.recluster_and_reselect(x)
+
+            # Random subset
+            k = self.rng.choice(len(models), 1, replace=False)+1
+            forecasters = self.rng.choice(len(self.models), k, replace=False)
+            predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
+
+            self.test_forecasters.append(forecasters)
+
+        return np.concatenate([X_test[:lag].numpy(), np.array(predictions)])
+
+class All_Ensemble(OS_PGSM):
+
+    def run(self, X_val, X_test):
+        lag = 5
+        predictions = []
+
+        self.test_forecasters = []
+
+        for target_idx in range(lag, len(X_test)):
+            f_test = (target_idx-lag)
+            t_test = (target_idx)
+            x = X_test[f_test:t_test] 
+            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
+
+            forecasters = np.arange(len(self.models))
             predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
 
             self.test_forecasters.append(forecasters)
