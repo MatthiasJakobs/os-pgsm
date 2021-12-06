@@ -214,7 +214,7 @@ single_models_with_lstm["simplelstm"] = {
 # nr_clusters_ensemble: Number of desired clusters over all ensembles
 # concept_drift_detection: ["periodic", "hoeffding", None]
 ###
-def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clusters_ensemble=15, concept_drift_detection="hoeffding", skip_drift_detection=False, skip_topm=False, skip_clustering=False, skip_type1=False, skip_type2=False):
+def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, distance_measure="dtw", nr_clusters_ensemble=15, concept_drift_detection="hoeffding", skip_drift_detection=False, skip_topm=False, skip_clustering=False, skip_type1=False, skip_type2=False):
     return dict(
             name=name,
             k=5, 
@@ -224,7 +224,7 @@ def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, nr_clus
             roc_mean = True,
             delta=0.95,
             topm=topm,
-            distance_measure="euclidean",
+            distance_measure=distance_measure,
             split_around_max_gradcam=False,
             invert_relu=False,
             roc_take_only_best=False,
@@ -340,6 +340,7 @@ all_experiments = [
     (OS_PGSM, ospgsm_st_original(name="ospgsm_st")),
     (OS_PGSM, ospgsm_int_original(name="ospgsm_int")),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=15")),
+    (OS_PGSM, min_distance_drifts(name="oep_roc-distance_euclidean", distance_measure="euclidean")),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=5", nr_clusters_ensemble=5)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=10", nr_clusters_ensemble=10)),
     (OS_PGSM, min_distance_drifts(name="oep_roc-k=20", nr_clusters_ensemble=20)),

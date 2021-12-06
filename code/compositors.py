@@ -41,6 +41,7 @@ class OS_PGSM:
         self.skip_clustering = config.get("skip_clustering", False)
         self.skip_type1 = config.get("skip_type1", False)
         self.skip_type2 = config.get("skip_type2", False)
+        self.distance_measure = config.get("distance_measure", "euclidean")
 
         # if self.topm != 1 and self.nr_clusters_ensemble != 1 and self.nr_clusters_ensemble is not None:
         #     assert self.nr_clusters_ensemble < self.topm
@@ -423,7 +424,7 @@ class OS_PGSM:
 
         # Cluster into the desired number of left-over models.
         tslearn_formatted = to_time_series_dataset(clostest_rocs)
-        km = TimeSeriesKMeans(n_clusters=nr_desired_clusters, metric=metric, random_state=self.rng)
+        km = TimeSeriesKMeans(n_clusters=nr_desired_clusters, metric=self.distance_measure, random_state=self.rng)
         C = km.fit_predict(tslearn_formatted)
         C_count = np.bincount(C)
 
