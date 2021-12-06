@@ -356,7 +356,10 @@ all_experiments = [
     (NCL, {"name":"ncl"}),
     (All_Ensemble, {"name":"all_ensemble"}),
     (SimpleLSTMBaseline, {"name":"simple-lstm"}),
+    (RandomTopM, random_topm(name="random_topm-k=5", nr_clusters_ensemble=5)),
+    (RandomTopM, random_topm(name="random_topm-k=10", nr_clusters_ensemble=10)),
     (RandomTopM, random_topm(name="random_topm-k=15", nr_clusters_ensemble=15)),
+    (RandomTopM, random_topm(name="random_topm-k=20", nr_clusters_ensemble=20)),
 ]
 
 # val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]

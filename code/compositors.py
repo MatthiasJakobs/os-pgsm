@@ -664,18 +664,26 @@ class RandomTopM(OS_PGSM):
         self.test_forecasters = []
         self.rebuild_rocs(X_val)
         self.roc_rejection_sampling()
+        x = X_test[:self.lag]
+        x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
 
-        for target_idx in range(lag, len(X_test)):
+        models, _ = self.recluster_and_reselect(x)
+
+        # Random subset
+        k = self.rng.choice(len(models), 1, replace=False)+1
+        forecasters = self.rng.choice(len(models), k, replace=False)
+        predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
+        self.test_forecasters.append(forecasters)
+
+        for target_idx in range(lag+1, len(X_test)):
             f_test = (target_idx-lag)
             t_test = (target_idx)
             x = X_test[f_test:t_test] 
             x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
 
-            models, _ = self.recluster_and_reselect(x)
-
             # Random subset
             k = self.rng.choice(len(models), 1, replace=False)+1
-            forecasters = self.rng.choice(len(self.models), k, replace=False)
+            forecasters = self.rng.choice(len(models), k, replace=False)
             predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
 
             self.test_forecasters.append(forecasters)
