@@ -12,6 +12,7 @@ from datasets.utils import sliding_split, roc_matrix, roc_mean
 from tslearn.clustering import TimeSeriesKMeans
 from tslearn.utils import to_time_series_dataset
 from seedpy import fixedseed
+from single_models import Simple_LSTM
 
 class OS_PGSM:
 
@@ -614,6 +615,17 @@ class OS_PGSM:
 
 # Baselines for comparison
 
+class SimpleLSTMBaseline(OS_PGSM):
+    def __init__(self, models, config, random_state=0):
+        super().__init__(models, config, random_state=random_state)
+        self.models[0].eval()
+
+    def run(self, X_val, X_test):
+        X_test_small, _ = sliding_split(X_test, 5, use_torch=True)
+        with fixedseed(torch, seed=0):
+            preds = self.models[0].predict(X_test_small.unsqueeze(1))
+            preds = np.concatenate([np.squeeze(X_test_small[0]), preds])
+            return preds
 
 class RandomSubsetEnsemble(OS_PGSM):
 

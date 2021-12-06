@@ -1,20 +1,18 @@
-from posixpath import join
-import traceback
+import skorch
 import numpy as np
 from numpy.core.fromnumeric import trace
 import pandas as pd
 import torch
-import sys
 import argparse
-import time
 from warnings import simplefilter
+from single_models import Simple_LSTM
 
-from compositors import OS_PGSM, RandomSubsetEnsemble
+from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline
 from ncl import NegCorLearning
 from datasets.utils import windowing, sliding_split
 from os.path import exists
 from pathlib import Path
-from experiments import load_models, all_experiments, min_distance_drifts, ospgsm_st_original
+from experiments import load_models, all_experiments, min_distance_drifts, ospgsm_st_original, single_models_with_lstm
 from utils import euclidean, smape
 from sklearn.metrics import mean_squared_error
 from evaluate_performance import calc_average_ranks
@@ -120,6 +118,21 @@ def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_ru
         if isinstance(compositor, NegCorLearning):
             compositor.models = torch.load(f"models/{ds_name}/{ds_index}_ncl.pth")
             compositor.eval()
+        if isinstance(compositor, SimpleLSTMBaseline):
+            lstm_config = single_models_with_lstm["simplelstm"]
+            nr_filters = lstm_config["nr_filters"]
+            hidden_states = lstm_config["hidden_states"]
+            save_path = f"models/{ds_name}/{ds_index}_simplelstm.pth"
+            model = skorch.NeuralNetRegressor(
+                Simple_LSTM, 
+                module__nr_filters=nr_filters, 
+                module__hidden_states=hidden_states, 
+                module__ts_length=5)
+
+            model.initialize()
+            model.load_params(f_params=save_path)
+            compositor = SimpleLSTMBaseline([model.module_], exp_config)
+
         preds = compositor.run(X_val, X_test)
 
         if np.any(np.isnan(preds)):
@@ -132,7 +145,7 @@ def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_ru
 
         if not dry_run:
             df_test.to_csv(test_result_path, index=False)
-            if not isinstance(compositor, NegCorLearning):
+            if not (isinstance(compositor, NegCorLearning) or isinstance(compositor, SimpleLSTMBaseline)):
                 save_test_forecasters(compositor, f"results/test_forecasters/{ds_name}_{ds_index}_{config_name}.csv")
 
 def remove_compositors(ds_name, ds_index, config_names):

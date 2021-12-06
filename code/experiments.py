@@ -1,7 +1,7 @@
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import OS_PGSM, RandomSubsetEnsemble
+from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline
 from ncl import NegCorLearning as NCL
 from itertools import product
 
@@ -196,6 +196,13 @@ single_models = {
     },
 }
 
+single_models_with_lstm = single_models.copy()
+single_models_with_lstm["simplelstm"] = {
+    "obj": Simple_LSTM,
+    "nr_filters": 128,
+    "hidden_states": 10
+}
+
 ###
 # k: Number of lagged values
 # omega: Size of validation set (in percent)
@@ -336,6 +343,7 @@ all_experiments = [
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_15", nr_clusters_ensemble=15)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="random_20", nr_clusters_ensemble=20)),
     (NCL, {"name":"ncl"}),
+    (SimpleLSTMBaseline, {"name":"simple-lstm"})
 ]
 
 # val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]

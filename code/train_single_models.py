@@ -9,18 +9,18 @@ from os.path import exists
 from datasets.utils import windowing, _apply_window
 from functools import lru_cache
 from itertools import product
-from experiments import single_models
+from experiments import single_models, single_models_with_lstm
 from sklearn.metrics import mean_squared_error
 from sklearn.model_selection import GridSearchCV
 from utils import calculate_single_seed
 from datasets.dataloading import load_dataset, implemented_datasets
-from single_models import BaselineLastValue
+from single_models import BaselineLastValue, Simple_LSTM
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from skorch.callbacks import LRScheduler, EarlyStopping
 
 warnings.filterwarnings("ignore")
 
-single_model_list = single_models.items()
+single_model_list = single_models_with_lstm.items()
 all_configs = product(implemented_datasets, single_model_list)
 
 def load_data(ds_name, ds_index):
