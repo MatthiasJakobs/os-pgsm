@@ -42,6 +42,7 @@ class OS_PGSM:
         self.skip_type1 = config.get("skip_type1", False)
         self.skip_type2 = config.get("skip_type2", False)
         self.distance_measure = config.get("distance_measure", "euclidean")
+        self.nr_select = config.get("nr_select", None)
 
         # if self.topm != 1 and self.nr_clusters_ensemble != 1 and self.nr_clusters_ensemble is not None:
         #     assert self.nr_clusters_ensemble < self.topm
@@ -170,7 +171,7 @@ class OS_PGSM:
             if drift_type is None:
                 return len(residuals) >= int(test_length / 10.0)
             else:
-                return len(residuals) >= 5
+                return len(residuals) >= 20
         elif self.concept_drift_detection == "hoeffding":
             residuals = np.array(residuals)
 
@@ -283,8 +284,13 @@ class OS_PGSM:
 
         # Select topm models according to upper bound
         if not self.skip_topm:
-            models, rocs = self.select_topm(models, rocs, x, upper_bound)
+            return self.select_topm(models, rocs, x, upper_bound)
 
+        if self.nr_select is not None:
+            selected_indices = np.argsort([euclidean(x, r) for r in rocs])[:self.nr_select]
+            selected_models = np.array(models)[selected_indices]
+            selected_rocs = [rocs[idx] for idx in selected_indices]
+            return selected_models, selected_rocs
         return models, rocs 
 
     def adaptive_monitor_min_distance(self, X_val, X_test):
@@ -650,41 +656,6 @@ class RandomSubsetEnsemble(OS_PGSM):
             # Random subset
             k = self.rng.choice(self.config["nr_clusters_ensemble"], 1, replace=False)+1
             forecasters = self.rng.choice(len(self.models), k, replace=False)
-            predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
-
-            self.test_forecasters.append(forecasters)
-
-        return np.concatenate([X_test[:lag].numpy(), np.array(predictions)])
-
-class RandomTopM(OS_PGSM):
-
-    def run(self, X_val, X_test):
-        lag = 5
-        predictions = []
-
-        self.test_forecasters = []
-        self.rebuild_rocs(X_val)
-        self.roc_rejection_sampling()
-        x = X_test[:self.lag]
-        x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-
-        models, _ = self.recluster_and_reselect(x)
-
-        # Random subset
-        k = self.rng.choice(len(models), 1, replace=False)+1
-        forecasters = self.rng.choice(len(models), k, replace=False)
-        predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
-        self.test_forecasters.append(forecasters)
-
-        for target_idx in range(lag+1, len(X_test)):
-            f_test = (target_idx-lag)
-            t_test = (target_idx)
-            x = X_test[f_test:t_test] 
-            x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-
-            # Random subset
-            k = self.rng.choice(len(models), 1, replace=False)+1
-            forecasters = self.rng.choice(len(models), k, replace=False)
             predictions.append(self.ensemble_predict(x_unsqueezed, subset=forecasters))
 
             self.test_forecasters.append(forecasters)

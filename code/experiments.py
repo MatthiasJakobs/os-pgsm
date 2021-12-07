@@ -1,7 +1,7 @@
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline, RandomTopM, All_Ensemble
+from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline, All_Ensemble 
 from ncl import NegCorLearning as NCL
 from itertools import product
 
@@ -214,7 +214,7 @@ single_models_with_lstm["simplelstm"] = {
 # nr_clusters_ensemble: Number of desired clusters over all ensembles
 # concept_drift_detection: ["periodic", "hoeffding", None]
 ###
-def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, distance_measure="dtw", nr_clusters_ensemble=15, concept_drift_detection="hoeffding", skip_drift_detection=False, skip_topm=False, skip_clustering=False, skip_type1=False, skip_type2=False):
+def min_distance_drifts(name="min_distance-k=10", nr_select=None, n_omega=60, topm=None, distance_measure="euclidean", nr_clusters_ensemble=15, concept_drift_detection="hoeffding", skip_drift_detection=False, skip_topm=False, skip_clustering=False, skip_type1=False, skip_type2=False):
     return dict(
             name=name,
             k=5, 
@@ -224,6 +224,7 @@ def min_distance_drifts(name="min_distance-k=10", n_omega=60, topm=None, distanc
             roc_mean = True,
             delta=0.95,
             topm=topm,
+            nr_select=nr_select,
             distance_measure=distance_measure,
             split_around_max_gradcam=False,
             invert_relu=False,
@@ -323,44 +324,31 @@ def random_subset_ensemble(name="Random", nr_clusters_ensemble=5):
         nr_clusters_ensemble=nr_clusters_ensemble,
     )
 
-def random_topm(name="random_topm", nr_clusters_ensemble=15):
-    base = min_distance_drifts().copy()
-    base.update({
-        "name": name,
-        "nr_clusters_ensemble": nr_clusters_ensemble,
-        "roc_mean": True,
-        "skip_clustering": False,
-        "skip_topm": True,
-    })
-    return base
-
 # All configurations used for OSPGSM experiments
 all_experiments = [
-    (OS_PGSM, ospgsm_original(name="ospgsm")),
-    (OS_PGSM, ospgsm_st_original(name="ospgsm_st")),
-    (OS_PGSM, ospgsm_int_original(name="ospgsm_int")),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-k=15")),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-distance_euclidean", distance_measure="euclidean")),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-k=5", nr_clusters_ensemble=5)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-k=10", nr_clusters_ensemble=10)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-k=20", nr_clusters_ensemble=20)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-skip_topm", skip_topm=True)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-skip_clustering", skip_clustering=True)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-skip_type1", skip_type1=True)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-skip_type2", skip_type2=True)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-skip_drift_detection", skip_drift_detection=True)),
-    (OS_PGSM, min_distance_drifts(name="oep_roc-periodic_type2", concept_drift_detection="periodic")),
-    (RandomSubsetEnsemble, random_subset_ensemble(name="random_5", nr_clusters_ensemble=5)),
-    (RandomSubsetEnsemble, random_subset_ensemble(name="random_10", nr_clusters_ensemble=10)),
-    (RandomSubsetEnsemble, random_subset_ensemble(name="random_15", nr_clusters_ensemble=15)),
-    (RandomSubsetEnsemble, random_subset_ensemble(name="random_20", nr_clusters_ensemble=20)),
+    (OS_PGSM, ospgsm_original(name="OS-PGSM")),
+    (OS_PGSM, ospgsm_st_original(name="OS-PGSM-ST")),
+    (OS_PGSM, ospgsm_int_original(name="OS-PGSM-Int")),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15")),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-5", nr_clusters_ensemble=5)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-10", nr_clusters_ensemble=10)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-20", nr_clusters_ensemble=20)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-C", skip_topm=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-TOP", skip_clustering=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-II", skip_type1=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-I", skip_type2=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-ST", skip_drift_detection=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-Per", concept_drift_detection="periodic")),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-6", nr_select=6, skip_topm=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-8", nr_select=8, skip_topm=True)),
+    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-10", nr_select=10, skip_topm=True)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-5", nr_clusters_ensemble=5)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-10", nr_clusters_ensemble=10)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-15", nr_clusters_ensemble=15)),
+    (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-20", nr_clusters_ensemble=20)),
     (NCL, {"name":"ncl"}),
-    (All_Ensemble, {"name":"all_ensemble"}),
-    (SimpleLSTMBaseline, {"name":"simple-lstm"}),
-    (RandomTopM, random_topm(name="random_topm-k=5", nr_clusters_ensemble=5)),
-    (RandomTopM, random_topm(name="random_topm-k=10", nr_clusters_ensemble=10)),
-    (RandomTopM, random_topm(name="random_topm-k=15", nr_clusters_ensemble=15)),
-    (RandomTopM, random_topm(name="random_topm-k=20", nr_clusters_ensemble=20)),
+    (All_Ensemble, {"name":"Ens"}),
+    (SimpleLSTMBaseline, {"name":"LSTM"}),
 ]
 
 # val_keys = ['y'] + ['pred_' + w for w in single_models.keys()]
