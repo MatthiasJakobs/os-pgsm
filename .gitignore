@@ -12,3 +12,4 @@ results_*.zip
 plots/*.png
 results/main_experiments/*.csv
 results/main_experiments/*.zip
+!code/datasets/legacy_ts/*.csv
