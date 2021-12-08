@@ -1,36 +1,48 @@
 # OEP-ROC
-
-## TODO
-<!-- 
-Code accompanying the ECML2021 publication *Explainable Online Deep Neural Network Selection using Adaptive Saliency Maps for Time Series Forecasting*.
-To replicate the experiments presented in the publication, please check out the `ecml2021` branch at `https://github.com/MatthiasJakobs/os-pgsm/tree/ecml2021`.
+Code accompanying the ECML Journal submission *Explainable Online Ensemble of Deep NeuralNetworks Pruning for Time Series Forecasting*.
 
 ## Datasets
-You have to download the M4 dataset manually and specify its path in `code/experiments.py` under `m4_data_path`. All other datasets should download automatically.
+Some datasets need to be downloaded and placed in `code/datasets/monash_ts` for the experiments to work.
+Specifically, you need to download the `Electricity (Hourly)`, `KDD Cup 2018`, `Pedestrian Counts`, `Solar (10 minutes)` and `Weather` datasets from https://forecastingdata.org/.
+If available, choose the datasets without missing values.
+Also, you need to rename them to `electricity_hourly.tsf`, `kdd_cup_2018.tsf`, `pedestrian_counts.tsf`, `solar_10_minutes.tsf` and `weather.tsf`.
 
-## Install requirements
+## Installing dependencies
+We use `python` version `3.7.10`. Install all dependencies via
+```
+pip install -r requirements.txt
+```
 
-Tested with `python==3.7`.
+## Overview of the repository
 
-`pip install git+https://github.com/MatthiasJakobs/tsx.git@ecml2021`
+- `code/compositors.py` contains the code for **OEP-ROC** and for **OS-PGSM**.
+- `code/experiments.py` contains all experiment parameters and configurations.
 
-`pip install torch==1.7 tslearn tqdm matplotlib sklearn fastdtw numpy pandas`
+## Recreate experiments
+All commands should be run from the base directory of the repository.
+To recreate our results, proceed in the following manner:
+1. Preprocess the data by running both 
 
-## How to use the code
-- `code/experiments.py` contains the used single models and datasets, as well as global parameters.
-- `code/train_models.py` trains the single models
-    - The status of which models have already been trained can be monitored using `check_train_complete.py`
-    - Example: `python code/train_models.py --dataset AbnormalHeartbeat --lag 10 --model rnn_a`
-    - To train the `M4` datasets, use `--dataset M4`
-- `code/run_prediction.py` runs **PGSM** using the single models on all datasets
-    - The results of `code/run_prediction.py` are stored in `results/`
-    - The status of which results have already been created can be monitored using `check_pred_complete.py`
-    - Examples: 
+    `python code/datasets/monash_forecasting.py`
 
-        `python code/run_prediction.py --lag 10`
+    and 
 
-        `python code/run_prediction.py --dataset m4_daily --lag 5`
-- `code/measure_runtime.py` creates the runtime experiment and prints the results to the terminal.
-- To generate all plots used in the paper, run `code/explain.py` after all experiments are finished.
+    `python code/datasets/legacy_datasets.py`
 
--->
+2. Train the base models by running 
+
+    `python code/train_single_models.py`
+
+3. Run our experiments with
+
+    `python code/run_predictions.py`
+
+    Notice that this takes a long time.
+
+4. To recreate the runtime measurements, run
+
+    `python code/measure_runtime.py`
+
+5. To recreate the plots, run
+
+    `python code/plots.py`
