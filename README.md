@@ -1,5 +1,5 @@
 # OEP-ROC
-Code accompanying the ECML Journal submission *Explainable Online Ensemble of Deep NeuralNetworks Pruning for Time Series Forecasting*.
+Code accompanying the ECML Journal submission *Explainable Online Ensemble of Deep Neural Networks Pruning for Time Series Forecasting*.
 
 ## Datasets
 Some datasets need to be downloaded and placed in `code/datasets/monash_ts` for the experiments to work.
