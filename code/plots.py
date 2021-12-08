@@ -3,6 +3,14 @@ import matplotlib.pyplot as plt
 
 from utils import euclidean
 
+colors = {
+    "roc_our": "b",
+    "roc_random": "g",
+    "topm_selection": "r",
+    "data": "k",
+    "forecast": "r",
+}
+
 def ambiguity(arr):
     mean = np.mean(arr, axis=0)
     return np.sum((arr - mean)**2)
@@ -45,26 +53,26 @@ def plot_1(x, our_selection, random_selection, our_selection_mask, random_select
             axs[row][col].set_xticks([])
             axs[row][col].set_yticks([])
             if row < rows//2:
-                axs[row][col].plot(our_selection[our_i], c="b")
+                axs[row][col].plot(our_selection[our_i], c=colors["roc_our"])
                 d = euclidean(x, our_selection[our_i])
                 if our_selection_mask[our_i]:
                     for spine in axs[row][col].spines.values():
-                        spine.set_edgecolor('red')
+                        spine.set_edgecolor(colors["topm_selection"])
                         spine.set_linewidth(2)
                 our_i += 1
             if row >= rows//2:
-                axs[row][col].plot(random_selection[random_i], c="k")
+                axs[row][col].plot(random_selection[random_i], c=colors["roc_random"])
                 d = euclidean(x, random_selection[random_i])
                 if random_selection_mask[random_i]:
                     for spine in axs[row][col].spines.values():
-                        spine.set_edgecolor('red')
+                        spine.set_edgecolor(colors["topm_selection"])
                         spine.set_linewidth(2)
                 random_i += 1
             axs[row][col].set_title(f"$d={d:.2f}$")
         axs[row][cols].set_xticks([])
         axs[row][cols].set_yticks([])
         axs[row][cols].set_title(f"input pattern")
-        axs[row][cols].plot(x, c="g")
+        axs[row][cols].plot(x, c=colors["data"])
 
     plt.tight_layout()
     plt.savefig("plots/test1.png")
@@ -73,15 +81,13 @@ def plot_2(x, y, rocs):
     complete = np.concatenate([x, y], axis=1).squeeze()
     x = x.squeeze()
     fig, axs = plt.subplots(1, 2, figsize=(8, 3))
-    axs[0].plot(complete, c="r")
-    axs[0].plot(x, c="b")
-    axs[0].plot(complete, c="r")
-    axs[0].plot(x, c="b")
+    axs[0].plot(complete, c=colors["forecast"])
+    axs[0].plot(x, c=colors["data"])
     for r in rocs:
-        axs[1].plot(r, c="b", alpha=0.3)
+        axs[1].plot(r, c=colors["roc_our"], alpha=0.3)
     mean_roc = np.mean(rocs, axis=0)
     print(mean_roc.shape)
-    axs[1].plot(mean_roc, c="b")
+    axs[1].plot(mean_roc, c=colors["roc_our"])
 
     plt.tight_layout()
     plt.savefig("plots/test2.png")
