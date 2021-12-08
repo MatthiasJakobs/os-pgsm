@@ -407,7 +407,7 @@ class OS_PGSM:
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
     # TODO: No runtime reports
-    def run(self, X_val, X_test, reuse_prediction=False):
+    def run(self, X_val, X_test, measure_runtime=False, reuse_prediction=False):
         with fixedseed(torch, seed=self.random_state):
             self.rebuild_rocs(X_val)
             self.shrink_rocs()        
@@ -417,16 +417,20 @@ class OS_PGSM:
             self.distance_ambiguities = []
             self.drifts_detected = []
 
+            before = time.time()
             if self.concept_drift_detection is None:
-                return self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
-
-            if self.drift_type == "ospgsm":
-                forecast = self.adaptive_online_roc_rebuild(X_val, X_test)
-            elif self.drift_type == "min_distance_change":
-                forecast = self.adaptive_monitor_min_distance(X_val, X_test)
+                forecast = self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
             else:
-                raise NotImplementedError(f"Drift type {self.drift_type} not implemented")
+                if self.drift_type == "ospgsm":
+                    forecast = self.adaptive_online_roc_rebuild(X_val, X_test)
+                elif self.drift_type == "min_distance_change":
+                    forecast = self.adaptive_monitor_min_distance(X_val, X_test)
+                else:
+                    raise NotImplementedError(f"Drift type {self.drift_type} not implemented")
+            after = time.time()
 
+            if measure_runtime:
+                return forecast, after-before
             return forecast
 
     def cluster_rocs(self, best_models, clostest_rocs, nr_desired_clusters, metric="dtw"):
