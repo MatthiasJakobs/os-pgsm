@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import matplotlib
 import matplotlib.pyplot as plt
 import pickle
 from os.path import exists
@@ -167,6 +168,7 @@ def plot_1(x, our_selection, random_selection, our_selection_mask, random_select
 
     rows = size[0]
     cols = size[1]
+    matplotlib.rcParams.update({'font.size': 11})
 
     fig, axs = plt.subplots(rows, cols+1, figsize=(12, 3))
     plt.suptitle(f"OEP-ROC-10 (top row): $amb={our_ambiguity:.2f}$ \t OEP-ROC-10-topm-6 (bottom row) $amb={random_ambiguity:.2f}$")
@@ -199,23 +201,29 @@ def plot_1(x, our_selection, random_selection, our_selection_mask, random_select
         axs[row][cols].set_title(f"input pattern")
         axs[row][cols].plot(x, c=colors["data"])
 
+    #plt.tight_layout(pad=0.4)
     plt.tight_layout()
     plt.savefig("plots/plot_1.pdf")
 
 def plot_2(x, y, pred, rocs):
     complete = np.concatenate([x, y], axis=1).squeeze()
-    fig, axs = plt.subplots(1, 2, figsize=(8, 2))
-    axs[0].plot(complete, c=colors["forecast"])
-    axs[0].plot(np.concatenate([x, pred], axis=1).squeeze(), c="green")
+    fig, axs = plt.subplots(1, 2, figsize=(10, 2.5))
+    axs[0].plot(complete, c=colors["forecast"], label="Ground truth")
+    axs[0].plot(np.concatenate([x, pred], axis=1).squeeze(), c="green", label="Prediction")
     x = x.squeeze()
     axs[0].plot(x, c=colors["data"])
     axs[0].set_xticks([])
+    axs[0].set_title("Example prediction from OEP-ROC-10")
+    axs[0].legend()
+
     for r in rocs:
         axs[1].plot(r, c=colors["roc_our"], alpha=0.3)
     mean_roc = np.mean(rocs, axis=0)
     axs[1].plot(mean_roc, c=colors["roc_our"])
     axs[1].set_xticks([])
+    axs[1].set_title("Regions of Competence")
 
+    #plt.legend()
     plt.tight_layout()
     plt.savefig("plots/plot_2.pdf")
 
