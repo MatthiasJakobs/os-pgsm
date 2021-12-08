@@ -1,7 +1,17 @@
 import numpy as np
+import torch
 import matplotlib.pyplot as plt
+import pickle
+from os.path import exists
 
 from utils import euclidean
+from datasets.dataloading import load_dataset
+from datasets.utils import windowing
+from experiments import load_models, min_distance_drifts
+from compositors import OS_PGSM
+from warnings import simplefilter
+
+simplefilter(action="ignore", category=UserWarning)
 
 colors = {
     "roc_our": "b",
@@ -36,6 +46,121 @@ def generate_synthetic_rocs(n, return_y=False, random_state=0):
         return roc, ys
     return roc
 
+def get_data_plot_2():
+    # Needed:
+    #     x (1, 5)
+    #     y (1, 1)
+    #     rocs from our method (k, 5)
+    ds_name = "AbnormalHeartbeat"
+    ds_index = 0
+    X = torch.from_numpy(load_dataset(ds_name, ds_index)).float()
+    models, _ = load_models(ds_name, ds_index, return_names=True)
+
+    [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=5, val_input_width=25, use_torch=True)
+
+    # Load data for plotting. Save intermediate results to speed up replotting
+    if exists("results/plot_1_our_data.p"):
+        our_data = pickle.load(open("results/plot_1_our_data.p", "rb"))
+    else:
+        compositor = OS_PGSM(models, min_distance_drifts(nr_clusters_ensemble=10)) 
+        preds = compositor.run(X_val, X_test)
+
+        our_data = {
+            "clustered_rocs": compositor.clustered_rocs,
+            "topm_selection": compositor.topm_selection,
+            "preds": preds
+        }
+        pickle.dump(our_data, open("results/plot_1_our_data.p", "wb"))
+
+    # Which timestep to visualize
+    start_index = 50
+    x = X_test[start_index:(start_index+5)].numpy()
+    y = X_test[(start_index+5)].numpy()
+
+    # Find used clusters and selections
+    for (iteration, topm_selection, topm_rocs) in our_data["topm_selection"]:
+        if iteration <= start_index:
+            our_selection_rocs = topm_rocs
+
+    our_rocs = torch.cat([r.reshape(1, -1) for r in our_selection_rocs], axis=0).numpy()
+    prediction = our_data["preds"][(start_index+5)]
+    return x.reshape(1, -1), y.reshape(1, -1), prediction.reshape(1, -1), our_rocs
+
+def get_data_plot_1():
+    # Needed:  
+    #     RoCs from our method (k, 5)
+    #     RoCs from random cluster (k, 5)
+    #     TopM selection from our method (binary) (k,1)
+    #     TopM selection from random (binary) (k,1)
+    ds_name = "AbnormalHeartbeat"
+    ds_index = 0
+    X = torch.from_numpy(load_dataset(ds_name, ds_index)).float()
+    models, _ = load_models(ds_name, ds_index, return_names=True)
+
+    [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=5, val_input_width=25, use_torch=True)
+
+    # Load data for plotting. Save intermediate results to speed up replotting
+    if exists("results/plot_1_our_data.p"):
+        our_data = pickle.load(open("results/plot_1_our_data.p", "rb"))
+    else:
+        compositor = OS_PGSM(models, min_distance_drifts(nr_clusters_ensemble=10)) 
+        preds = compositor.run(X_val, X_test)
+
+        our_data = {
+            "clustered_rocs": compositor.clustered_rocs,
+            "topm_selection": compositor.topm_selection,
+            "preds": preds
+        }
+        pickle.dump(our_data, open("results/plot_1_our_data.p", "wb"))
+
+    if exists("results/plot_1_random_data.p"):
+        random_data = pickle.load(open("results/plot_1_random_data.p", "rb"))
+    else:
+        compositor = OS_PGSM(models, min_distance_drifts(nr_clusters_ensemble=10, skip_topm=True, nr_select=6)) 
+        preds = compositor.run(X_val, X_test)
+
+        random_data = {
+            "clustered_rocs": compositor.clustered_rocs,
+            "topm_selection": compositor.topm_selection,
+            "preds": preds
+        }
+        pickle.dump(random_data, open("results/plot_1_random_data.p", "wb"))
+
+    # Which timestep to visualize
+    start_index = 50
+    x = X_test[start_index:(start_index+5)].numpy()
+
+    # Find used clusters and selections
+    for (iteration, c_selection, c_rocs) in our_data["clustered_rocs"]:
+        if iteration <= start_index:
+            our_clusters_selection = c_selection
+            our_clusters_rocs = c_rocs
+    for (iteration, topm_selection, topm_rocs) in our_data["topm_selection"]:
+        if iteration <= start_index:
+            our_selection_models = topm_selection
+            our_selection_rocs = topm_rocs
+
+    for (iteration, c_selection, c_rocs) in random_data["clustered_rocs"]:
+        if iteration <= start_index:
+            random_clusters_selection = c_selection
+            random_clusters_rocs = c_rocs
+    for (iteration, topm_selection, topm_rocs) in random_data["topm_selection"]:
+        if iteration <= start_index:
+            random_selection_models = topm_selection
+            random_selection_rocs = topm_rocs
+
+    our_selection = torch.cat([r.reshape(1, -1) for r in our_clusters_rocs], axis=0).numpy()
+    our_selection_mask = np.zeros((10), dtype=np.bool8)
+    for i in range(10):
+        our_selection_mask[i] = (our_clusters_selection[i] in our_selection_models)
+
+    random_selection = torch.cat([r.reshape(1, -1) for r in random_clusters_rocs], axis=0).numpy()
+    random_selection_mask = np.zeros((10), dtype=np.bool8)
+    for i in range(10):
+        random_selection_mask[i] = (random_clusters_selection[i] in random_selection_models)
+
+    return x, our_selection, random_selection, our_selection_mask.squeeze(), random_selection_mask.squeeze()
+
 def plot_1(x, our_selection, random_selection, our_selection_mask, random_selection_mask, size=(2,10)):
     our_ambiguity = ambiguity(our_selection)
     random_ambiguity = ambiguity(random_selection)
@@ -44,7 +169,7 @@ def plot_1(x, our_selection, random_selection, our_selection_mask, random_select
     cols = size[1]
 
     fig, axs = plt.subplots(rows, cols+1, figsize=(12, 3))
-    plt.suptitle(f"OEP-ROC (blue): $amb={our_ambiguity:.2f}$ \t Random selection (red) $amb={random_ambiguity:.2f}$")
+    plt.suptitle(f"OEP-ROC-10 (top row): $amb={our_ambiguity:.2f}$ \t OEP-ROC-10-topm-6 (bottom row) $amb={random_ambiguity:.2f}$")
     our_i = 0
     random_i = 0
     for row in range(rows):
@@ -75,30 +200,25 @@ def plot_1(x, our_selection, random_selection, our_selection_mask, random_select
         axs[row][cols].plot(x, c=colors["data"])
 
     plt.tight_layout()
-    plt.savefig("plots/test1.png")
+    plt.savefig("plots/plot_1.pdf")
 
-def plot_2(x, y, rocs):
+def plot_2(x, y, pred, rocs):
     complete = np.concatenate([x, y], axis=1).squeeze()
-    x = x.squeeze()
-    fig, axs = plt.subplots(1, 2, figsize=(8, 3))
+    fig, axs = plt.subplots(1, 2, figsize=(8, 2))
     axs[0].plot(complete, c=colors["forecast"])
+    axs[0].plot(np.concatenate([x, pred], axis=1).squeeze(), c="green")
+    x = x.squeeze()
     axs[0].plot(x, c=colors["data"])
+    axs[0].set_xticks([])
     for r in rocs:
         axs[1].plot(r, c=colors["roc_our"], alpha=0.3)
     mean_roc = np.mean(rocs, axis=0)
-    print(mean_roc.shape)
     axs[1].plot(mean_roc, c=colors["roc_our"])
+    axs[1].set_xticks([])
 
     plt.tight_layout()
-    plt.savefig("plots/test2.png")
-
+    plt.savefig("plots/plot_2.pdf")
 
 if __name__ == "__main__":
-    n_clusters = 10
-    our_method = generate_synthetic_rocs(n_clusters, random_state=1)
-    random_cluster = generate_synthetic_rocs(n_clusters, random_state=2)
-    x = generate_synthetic_rocs(1, random_state=3).squeeze()
-    plot_1(x, our_method, random_cluster, np.array([True, False]*5), np.array([False, True]*5))
-
-    x, y = generate_synthetic_rocs(1, return_y=True, random_state=51234)
-    plot_2(x, y, our_method)
+    plot_1(*get_data_plot_1())
+    plot_2(*get_data_plot_2())

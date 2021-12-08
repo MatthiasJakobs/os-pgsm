@@ -268,13 +268,14 @@ class OS_PGSM:
             else:
                 self.rocs[i] = []
 
-    def recluster_and_reselect(self, x):
+    def recluster_and_reselect(self, x, iteration):
         # Find closest time series in each models RoC to x
         models, rocs = self.find_closest_rocs(x, self.rocs)
 
         # Cluster all RoCs into nr_clusters_ensemble clusters
         if not self.skip_clustering:
             models, rocs = self.cluster_rocs(models, rocs, self.nr_clusters_ensemble)
+            self.clustered_rocs.append((iteration, models, rocs))
 
         # Calculate upper and lower bound of delta (radius of circle)
         numpy_regions = [r.numpy() for r in rocs]
@@ -284,12 +285,15 @@ class OS_PGSM:
 
         # Select topm models according to upper bound
         if not self.skip_topm:
-            return self.select_topm(models, rocs, x, upper_bound)
+            selected_models, selected_rocs = self.select_topm(models, rocs, x, upper_bound)
+            self.topm_selection.append((iteration, selected_models, selected_rocs))
+            return selected_models, selected_rocs
 
         if self.nr_select is not None:
             selected_indices = np.argsort([euclidean(x, r) for r in rocs])[:self.nr_select]
             selected_models = np.array(models)[selected_indices]
             selected_rocs = [rocs[idx] for idx in selected_indices]
+            self.topm_selection.append((iteration, selected_models, selected_rocs))
             return selected_models, selected_rocs
         return models, rocs 
 
@@ -313,6 +317,9 @@ class OS_PGSM:
 
         self.random_selection = []
         self.topm_empty = []
+
+        self.clustered_rocs = []
+        self.topm_selection = []
         
         predictions = []
         mean_residuals = []
@@ -334,7 +341,7 @@ class OS_PGSM:
         # First iteration 
         x = X_test[:self.lag]
         x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-        topm, topm_rocs = self.recluster_and_reselect(x)
+        topm, topm_rocs = self.recluster_and_reselect(x, 5)
 
         # Compute min distance to x from the all models
         _, closest_rocs = self.find_closest_rocs(x, self.rocs)
@@ -386,7 +393,7 @@ class OS_PGSM:
                 self.roc_rejection_sampling()
 
             if drift_type_one or drift_type_two:
-                topm, topm_rocs = self.recluster_and_reselect(x)
+                topm, topm_rocs = self.recluster_and_reselect(x, target_idx)
                 if drift_type_two:
                     self.drifts_type_2_detected.append(target_idx)
                     _, closest_rocs = self.find_closest_rocs(x, self.rocs)
