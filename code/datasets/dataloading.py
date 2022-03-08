@@ -7,7 +7,7 @@ from datasets.legacy_datasets import load_dataset as load_legacy
 from datasets.legacy_datasets import all_legacy_names as get_legacy_names
 
 monash_names = get_monash_names()
-monash_indices = list(range(5))
+monash_indices = list(range(15))
 monash_configs = product(monash_names, monash_indices)
 legacy_names = get_legacy_names
 legacy_indices = [0]
@@ -21,5 +21,3 @@ def load_dataset(ds_name, ds_index):
     if ds_name in monash_names:
         return load_monash(ds_name, ds_index)
     raise Exception("Unknown ds name", ds_name)
-
-    
