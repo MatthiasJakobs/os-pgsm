@@ -630,6 +630,40 @@ class OS_PGSM:
 
         return top_models
 
+class OS_PGSM_Faster(OS_PGSM):
+
+    def evaluate_on_validation(self, x_val, y_val):
+        losses = np.zeros((len(self.models)))
+
+        if self.roc_mean:
+            all_cams = np.zeros((len(self.models), self.n_omega))
+        else:
+            all_cams = []
+
+        X, y = self.small_split(x_val)
+        for n_m, m in enumerate(self.models):
+            res = m(X.unsqueeze(1), return_intermediate=True)
+            _losses = mse(res['logits'], y)
+            grads = torch.autograd.grad(outputs=_losses, inputs=res['feats'], grad_outputs=torch.ones_like(_losses), create_graph=True)[0].detach()
+            feats = res['feats'].detach()
+
+            # GradCAM
+            w = torch.mean(grads, axis=-1)
+            cams = (w.unsqueeze(-1) * feats).sum(axis=1)
+            cams = torch.nn.functional.relu(cams).squeeze().numpy()
+
+            losses[n_m] = torch.sum(_losses)
+
+            if self.roc_mean:
+                all_cams[n_m] = roc_mean(roc_matrix(cams, z=1))
+            else:
+                all_cams.append(cams)
+
+        if not self.roc_mean:
+            all_cams = np.array(all_cams)
+
+        return losses, all_cams
+
 
 # Baselines for comparison
 
