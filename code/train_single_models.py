@@ -112,11 +112,12 @@ def train():
                 module__nr_filters=nr_filters, 
                 module__hidden_states=hidden_states, 
                 module__ts_length=X_train.shape[-1], 
+                module__device=device,
                 device=device,
                 callbacks=[('early_stoping', EarlyStopping(patience=100, threshold=1e-4)), ('lr_scheduler', LRScheduler(policy=ReduceLROnPlateau, patience=20, factor=0.3))]
         )
 
-        gs = GridSearchCV(model, params, refit=True, cv=10, scoring="neg_mean_squared_error")
+        gs = GridSearchCV(model, params, refit=True, cv=5, scoring="neg_mean_squared_error")
 
         model.set_params(verbose=False)
 

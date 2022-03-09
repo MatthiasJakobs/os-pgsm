@@ -168,7 +168,7 @@ class ResidualBlock(nn.Module):
 
 class Shallow_FCN(BasePyTorchForecaster):
 
-    def __init__(self, ts_length, hidden_states=0, nr_filters=32, **kwargs):
+    def __init__(self, ts_length, hidden_states=0, nr_filters=32, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.feature_extractor = nn.Sequential(
@@ -177,14 +177,14 @@ class Shallow_FCN(BasePyTorchForecaster):
             nn.BatchNorm1d(nr_filters)
             # nn.Conv1d(int(nr_filters/2), nr_filters, 3, padding=1),
             # nn.ReLU()
-        )
+        ).to(device)
 
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten().to(device)
 
         self.forecaster = nn.Sequential(
             nn.Dropout(0.9),
             nn.Linear(ts_length * nr_filters, 1)
-        )
+        ).to(device)
 
     def predict(self, x):
         with torch.no_grad():
@@ -215,40 +215,40 @@ class Shallow_FCN(BasePyTorchForecaster):
 
 class OneResidualFCN(Shallow_FCN):
 
-    def __init__(self, ts_length, nr_filters=32, **kwargs):
+    def __init__(self, ts_length, nr_filters=32, device='cpu', **kwargs):
         super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters)
-        )
+        ).to(device)
 
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten().to(device)
 
         self.forecaster = nn.Sequential(
             nn.Dropout(0.9),
             nn.Linear(ts_length * nr_filters, 100),
             nn.Dropout(0.9),
             nn.Linear(100, 1)
-        )
+        ).to(device)
 
 class TwoResidualFCN(Shallow_FCN):
 
-    def __init__(self, ts_length, nr_filters=32, **kwargs):
+    def __init__(self, ts_length, nr_filters=32, device='cpu', **kwargs):
         super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters),
             ResidualBlock(nr_filters, nr_filters)
-        )
+        ).to(device)
 
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten().to(device)
 
         self.forecaster = nn.Sequential(
             nn.Dropout(0.9),
             nn.Linear(ts_length * nr_filters, 100),
             nn.Dropout(0.9),
             nn.Linear(100, 1)
-        )
+        ).to(device)
 
 # class OneResidualShallow(OneResidualFCN):
 
@@ -272,22 +272,22 @@ class TwoResidualFCN(Shallow_FCN):
 
 class TwoResidualFCN(Shallow_FCN):
 
-    def __init__(self, ts_length, nr_filters=32, **kwargs):
+    def __init__(self, ts_length, nr_filters=32, device='cpu', **kwargs):
         super().__init__(ts_length, nr_filters=nr_filters, **kwargs)
 
         self.feature_extractor = nn.Sequential(
             ResidualBlock(1, nr_filters),
             ResidualBlock(nr_filters, nr_filters)
-        )
+        ).to(device)
 
-        self.flatten = nn.Flatten()
+        self.flatten = nn.Flatten().to(device)
 
         self.forecaster = nn.Sequential(
             nn.Dropout(0.9),
             nn.Linear(ts_length * nr_filters, 100),
             nn.Dropout(0.9),
             nn.Linear(100, 1)
-        )
+        ).to(device)
 
 
 class Shallow_CNN_RNN(BasePyTorchForecaster):
@@ -295,12 +295,14 @@ class Shallow_CNN_RNN(BasePyTorchForecaster):
     # This version is STATELESS, i.e., it will reset the hidden state before every batch
     # See https://discuss.pytorch.org/t/lstm-hidden-state-logic/48101/4
     # I could have used a simpler version of not giving the LSTM any input state to begin with, but now, this is easily adaptable to statefull
-    def __init__(self, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, **kwargs):
+    def __init__(self, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.cnn_filters = nr_filters
         self.output_size = output_size
         self.hidden_states = hidden_states
+
+        self.device = device
 
         self.feature_extractor = nn.Sequential(
             nn.Conv1d(1, int(self.cnn_filters/2), 3, padding=1),
@@ -309,32 +311,32 @@ class Shallow_CNN_RNN(BasePyTorchForecaster):
             nn.Conv1d(int(self.cnn_filters/2), self.cnn_filters, 3, padding=1),
             nn.ReLU(),
             nn.BatchNorm1d(self.cnn_filters)
-        )
+        ).to(device)
 
-        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9)
-        self.reset_hidden_states()
+        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9).to(device)
+        self.reset_hidden_states(device=device)
 
-        self.dense = nn.Linear(ts_length, output_size)
+        self.dense = nn.Linear(ts_length, output_size).to(device)
 
     def reset_gradients(self):
         self.feature_extractor.zero_grad()
-        self.reset_hidden_states()
+        self.reset_hidden_states(device=self.device)
         self.dense.zero_grad()
         
-    def reset_hidden_states(self, batch_size=None):
+    def reset_hidden_states(self, batch_size=None, device='cpu'):
         if batch_size is None:
             batch_size = self.batch_size
 
         self.lstm_hidden_cell = (
-            torch.zeros(1,batch_size, self.hidden_states), 
-            torch.zeros(1,batch_size, self.hidden_states)
+            torch.zeros(1,batch_size, self.hidden_states).to(device), 
+            torch.zeros(1,batch_size, self.hidden_states).to(device)
         )
 
     def forward(self, x, return_intermediate=False):
 
         feats = self.feature_extractor(x)
         batch_size, nr_filters, seq_length = feats.shape
-        self.reset_hidden_states(batch_size=batch_size) # STATELESS
+        self.reset_hidden_states(batch_size=batch_size, device=self.device) # STATELESS
         lstm_out, self.lstm_hidden_cell = self.lstm(feats.view(seq_length, batch_size, nr_filters), self.lstm_hidden_cell)
         prediction = self.dense(lstm_out[..., -1].view(batch_size, -1))
 
@@ -357,32 +359,36 @@ class Shallow_CNN_RNN(BasePyTorchForecaster):
 
 class AS_LSTM_02(Shallow_CNN_RNN):
 
-    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, **kwargs):
+    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.cnn_filters = nr_filters
         self.output_size = output_size
         self.hidden_states = hidden_states
+
+        self.device = device
 
         self.feature_extractor = nn.Sequential(
             nn.Conv1d(1, self.cnn_filters, 1, padding=0),
             nn.ReLU(),
             nn.MaxPool1d(1)
-        )
+        ).to(device)
 
-        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9)
-        self.reset_hidden_states()
+        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9).to(device)
+        self.reset_hidden_states(device=self.device)
 
-        self.dense = nn.Linear(ts_length, output_size)
+        self.dense = nn.Linear(ts_length, output_size).to(device)
 
 class AS_LSTM_03(Shallow_CNN_RNN):
 
-    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, **kwargs):
+    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.cnn_filters = nr_filters
         self.output_size = output_size
         self.hidden_states = hidden_states
+
+        self.device = device
 
         self.feature_extractor = nn.Sequential(
             nn.Conv1d(1, self.cnn_filters, 1, padding=0),
@@ -394,21 +400,23 @@ class AS_LSTM_03(Shallow_CNN_RNN):
             nn.Conv1d(self.cnn_filters, self.cnn_filters, 1, padding=0),
             nn.ReLU(),
             nn.BatchNorm1d(self.cnn_filters),
-        )
+        ).to(device)
 
-        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9)
+        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9).to(device)
         self.reset_hidden_states()
 
-        self.dense = nn.Linear(ts_length, output_size)
+        self.dense = nn.Linear(ts_length, output_size).to(device)
 
 class AS_LSTM_01(Shallow_CNN_RNN):
 
-    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, **kwargs):
+    def __init__(self, nr_filters=32, ts_length=23, output_size=1, hidden_states=10, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.cnn_filters = nr_filters
         self.output_size = output_size
         self.hidden_states = hidden_states
+
+        self.device = device
 
         self.feature_extractor = nn.Sequential(
             nn.Conv1d(1, self.cnn_filters, 1, padding=0),
@@ -417,28 +425,30 @@ class AS_LSTM_01(Shallow_CNN_RNN):
             nn.Conv1d(self.cnn_filters, self.cnn_filters, 1, padding=0),
             nn.ReLU(),
             nn.BatchNorm1d(self.cnn_filters),
-        )
+        ).to(device)
 
-        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9)
-        self.reset_hidden_states()
+        self.lstm = nn.LSTM(self.cnn_filters, self.hidden_states, dropout=0.9).to(device)
+        self.reset_hidden_states(device=self.device)
 
-        self.dense = nn.Linear(ts_length, output_size)
+        self.dense = nn.Linear(ts_length, output_size).to(device)
 
 class Simple_LSTM(BasePyTorchForecaster):
 
-    def __init__(self, lag=5, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, **kwargs):
+    def __init__(self, lag=5, nr_filters=64, ts_length=23, output_size=1, hidden_states=100, device='cpu', **kwargs):
         super().__init__(**kwargs)
 
         self.output_size = output_size
         self.hidden_states = hidden_states
 
-        self.lstm = nn.LSTM(1, self.hidden_states, dropout=0.9)
+        self.device = device
+
+        self.lstm = nn.LSTM(1, self.hidden_states, dropout=0.9).to(device)
         self.reset_hidden_states()
 
-        self.dense = nn.Linear(lag, output_size)
+        self.dense = nn.Linear(lag, output_size).to(device)
 
-    def reset_gradients(self):
-        self.reset_hidden_states()
+    def reset_gradients(self, device='cpu'):
+        self.reset_hidden_states(device=device)
         self.dense.zero_grad()
         
     def reset_hidden_states(self, batch_size=None):
@@ -446,8 +456,8 @@ class Simple_LSTM(BasePyTorchForecaster):
             batch_size = self.batch_size
 
         self.lstm_hidden_cell = (
-            torch.zeros(1,batch_size, self.hidden_states), 
-            torch.zeros(1,batch_size, self.hidden_states)
+            torch.zeros(1,batch_size, self.hidden_states).to(self.device), 
+            torch.zeros(1,batch_size, self.hidden_states).to(self.device)
         )
 
     def forward(self, x):

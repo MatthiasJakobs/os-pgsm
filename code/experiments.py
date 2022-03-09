@@ -1,3 +1,4 @@
+import torch
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
@@ -9,19 +10,23 @@ def load_models(ds_name, ds_index, return_names=False):
     all_models = []
     all_model_names = []
     model_names = [(name, m_obj) for (name, m_obj) in single_models.items() if not "lstm" in name and not "adaptive" in name]
+
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
     for model_name, model_obj in model_names:
         save_path = f"models/{ds_name}/{ds_index}_{model_name}.pth"
         nr_filters = model_obj["nr_filters"]
         hidden_states = model_obj["hidden_states"]
         model = skorch.NeuralNetRegressor(
                 model_obj["obj"], 
+                device=device,
                 module__nr_filters=nr_filters, 
                 module__hidden_states=hidden_states, 
                 module__ts_length=5) # ?
 
         model.initialize()
         model.load_params(f_params=save_path)
-        all_models.append(model.module_)
+        all_models.append(model.module_.to(device))
         all_model_names.append(model_name)
 
     if return_names:
