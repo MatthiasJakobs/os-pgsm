@@ -189,7 +189,7 @@ class Shallow_FCN(BasePyTorchForecaster):
     def predict(self, x):
         with torch.no_grad():
             prediction = self.forward(x)
-            return prediction.squeeze().numpy()
+            return prediction.squeeze().cpu().numpy()
 
     def forward(self, x, return_intermediate=False):
 
@@ -337,7 +337,7 @@ class Shallow_CNN_RNN(BasePyTorchForecaster):
         feats = self.feature_extractor(x)
         batch_size, nr_filters, seq_length = feats.shape
         self.reset_hidden_states(batch_size=batch_size, device=self.device) # STATELESS
-        lstm_out, self.lstm_hidden_cell = self.lstm(feats.view(seq_length, batch_size, nr_filters), self.lstm_hidden_cell)
+        lstm_out, self.lstm_hidden_cell = self.lstm(feats.reshape(seq_length, batch_size, nr_filters), self.lstm_hidden_cell)
         prediction = self.dense(lstm_out[..., -1].view(batch_size, -1))
 
         if return_intermediate:
@@ -355,7 +355,7 @@ class Shallow_CNN_RNN(BasePyTorchForecaster):
     def predict(self, x):
         with torch.no_grad():
             prediction = self.forward(x)
-            return prediction.squeeze().numpy()
+            return prediction.squeeze().cpu().numpy()
 
 class AS_LSTM_02(Shallow_CNN_RNN):
 
@@ -474,5 +474,5 @@ class Simple_LSTM(BasePyTorchForecaster):
     def predict(self, x):
         with torch.no_grad():
             prediction = self.forward(x)
-            return prediction.squeeze().numpy()
+            return prediction.squeeze().cpu().numpy()
 

@@ -17,6 +17,9 @@ def main():
     repeats = 5
     batch_size = 100
 
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    print(f'Use device {device}')
+
     for (ds_name, ds_index) in implemented_datasets:
         save_path = f"models/{ds_name}/{ds_index}_ncl.pth"
         if exists(save_path):
@@ -34,11 +37,11 @@ def main():
                     nr_filters = model_obj["nr_filters"]
                     hidden_states = model_obj["hidden_states"]
                     try:
-                        used_single_models.append(m(nr_filters=nr_filters, ts_length=X_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size))
+                        used_single_models.append(m(nr_filters=nr_filters, ts_length=X_train.shape[-1], hidden_states=hidden_states, batch_size=batch_size, device=device))
                     except TypeError:
-                        used_single_models.append(m(nr_filters=nr_filters, ts_length=X_train.shape[-1], batch_size=batch_size))
+                        used_single_models.append(m(nr_filters=nr_filters, ts_length=X_train.shape[-1], batch_size=batch_size, device=device))
 
-                model = NegCorLearning(used_single_models, {})
+                model = NegCorLearning(used_single_models, {}, device=device)
                 model.batch_size = batch_size
                 val_loss, best_model = model.fit(X_train, y_train, X_val, y_val, verbose=False)
 

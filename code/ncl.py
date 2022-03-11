@@ -6,10 +6,11 @@ import copy
 from typing import List
 from seedpy import fixedseed
 from datasets.utils import sliding_split
+from utils import mse
 
 class NegCorLearning(nn.Module):
 
-    def __init__(self, models, config, lamb=0.9):
+    def __init__(self, models, config, lamb=0.9, device='cpu'):
         super(NegCorLearning, self).__init__()
         self.models = models
         self.config = config
@@ -20,12 +21,13 @@ class NegCorLearning(nn.Module):
         self.lamb = lamb
         self.epochs = 500
         self.early_stopping = 25
+        self.device = device
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return (1/self.nr_models) * np.sum(np.array([m.predict(X) for m in self.models]), axis=0)
 
     def forward(self, X: torch.tensor) -> List[torch.tensor]:
-        return [m(X).unsqueeze(0) for m in self.models]
+        return [m(X) for m in self.models]
 
     def run(self, X_val, X_test):
         X_test_small, y_test_small = sliding_split(X_test, 5, use_torch=True)
@@ -64,6 +66,8 @@ class NegCorLearning(nn.Module):
             epoch_loss = 0.0
             epoch_val_loss = 0.0
             for X, y in train_dl:
+                X = X.to(self.device)
+                y = y.to(self.device)
                 self.train()
                 optim.zero_grad()
 
@@ -75,29 +79,21 @@ class NegCorLearning(nn.Module):
                 epoch_loss += loss.item()
                 optim.step()
 
-            for X, y in val_dl:
-                self.eval()
+            y_val_pred = self.predict(X_val.to(self.device))
+            val_mse = mse(torch.from_numpy(y_val_pred).reshape(-1), y_val.reshape(-1))
 
-                with torch.no_grad():
-                    predictions = self.forward(X)
-                    ensemble_prediction = torch.mean(torch.cat(predictions, axis=0), axis=0)
-                    loss = self.div_loss(y, predictions, ensemble_prediction).item()
-
-
-                epoch_val_loss += loss
-                if loss < best_val_loss:
-                    best_val_epoch = epoch
-                    best_val_loss = loss
-                    #torch.save(self.models, model_save_path)
-                    best_val_model = copy.deepcopy(self.models)
-                else:
-                    if (epoch - best_val_epoch) >= self.early_stopping:
-                        #print(f"Early stopping at epoch {epoch}, reverting to {best_val_epoch}")
-                        return best_val_loss, best_val_model
+            if val_mse < best_val_loss:
+                best_val_epoch = epoch
+                best_val_loss = val_mse
+                best_val_model = copy.deepcopy(self.models)
+            else:
+                if (epoch - best_val_epoch) >= self.early_stopping:
+                    print(f"Early stopping at epoch {epoch}, reverting to {best_val_epoch}")
+                    return best_val_loss.item(), best_val_model
 
             train_losses.append(epoch_loss)
             val_losses.append(epoch_val_loss)
             if verbose:
-                print(epoch, epoch_loss, epoch_val_loss)
+                print(epoch, epoch_loss, val_mse)
 
         return best_val_loss, best_val_model
