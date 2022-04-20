@@ -57,7 +57,10 @@ def main():
             print(ds_name, ds_index, "chose", nearest_model_idx)
             print("-"*30)
 
-            torch.save(models[nearest_model_idx], save_path)
+            models_to_save = models[nearest_model_idx]
+            for m in models_to_save:
+                m.to('cpu')
+            torch.save(models_to_save, save_path)
 
 if __name__ == "__main__":
     main()

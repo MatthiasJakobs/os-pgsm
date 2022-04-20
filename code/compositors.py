@@ -16,7 +16,7 @@ from single_models import Simple_LSTM
 
 class OS_PGSM:
 
-    def __init__(self, models, config, random_state=0):
+    def __init__(self, models, config, random_state=0, device='cpu'):
         self.models = models
         self.config = config
         self.lag = config.get("k", 5)
@@ -681,7 +681,7 @@ class SimpleLSTMBaseline(OS_PGSM):
 
 class RandomSubsetEnsemble(OS_PGSM):
 
-    def __init__(self, models, config, random_state=0):
+    def __init__(self, models, config, random_state=0, device='cpu'):
         self.models = models
         self.config = config
         self.rng = np.random.RandomState(random_state)

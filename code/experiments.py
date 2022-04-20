@@ -2,16 +2,16 @@ import torch
 import skorch
 from datasets.monash_forecasting import _get_ds_names
 from single_models import Shallow_CNN_RNN, Shallow_FCN, AS_LSTM_01, AS_LSTM_02, AS_LSTM_03, Simple_LSTM, OneResidualFCN, TwoResidualFCN
-from compositors import OS_PGSM, RandomSubsetEnsemble, SimpleLSTMBaseline, All_Ensemble 
+from compositors import OS_PGSM, OS_PGSM_Faster, RandomSubsetEnsemble, SimpleLSTMBaseline, All_Ensemble 
 from ncl import NegCorLearning as NCL
 from itertools import product
 
-def load_models(ds_name, ds_index, return_names=False):
+def load_models(ds_name, ds_index, return_names=False, device=None):
     all_models = []
     all_model_names = []
     model_names = [(name, m_obj) for (name, m_obj) in single_models.items() if not "lstm" in name and not "adaptive" in name]
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    device = device or 'cuda' if torch.cuda.is_available() else 'cpu' 
 
     for model_name, model_obj in model_names:
         save_path = f"models/{ds_name}/{ds_index}_{model_name}.pth"
@@ -331,22 +331,22 @@ def random_subset_ensemble(name="Random", nr_clusters_ensemble=5):
 
 # All configurations used for OSPGSM experiments
 all_experiments = [
-    (OS_PGSM, ospgsm_original(name="OS-PGSM")),
-    (OS_PGSM, ospgsm_st_original(name="OS-PGSM-ST")),
-    (OS_PGSM, ospgsm_int_original(name="OS-PGSM-Int")),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15")),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-5", nr_clusters_ensemble=5)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-10", nr_clusters_ensemble=10)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-20", nr_clusters_ensemble=20)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-C", skip_topm=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-TOP", skip_clustering=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-II", skip_type1=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-I", skip_type2=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-ST", skip_drift_detection=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-Per", concept_drift_detection="periodic")),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-6", nr_select=6, skip_topm=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-8", nr_select=8, skip_topm=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15-topm-10", nr_select=10, skip_topm=True)),
+    (OS_PGSM_Faster, ospgsm_original(name="OS-PGSM")),
+    (OS_PGSM_Faster, ospgsm_st_original(name="OS-PGSM-ST")),
+    (OS_PGSM_Faster, ospgsm_int_original(name="OS-PGSM-Int")),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-15")),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-5", nr_clusters_ensemble=5)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-10", nr_clusters_ensemble=10)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-20", nr_clusters_ensemble=20)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-C", skip_topm=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-TOP", skip_clustering=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-II", skip_type1=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-I", skip_type2=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-ST", skip_drift_detection=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-Per", concept_drift_detection="periodic")),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-15-topm-6", nr_select=6, skip_topm=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-15-topm-8", nr_select=8, skip_topm=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-15-topm-10", nr_select=10, skip_topm=True)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-5", nr_clusters_ensemble=5)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-10", nr_clusters_ensemble=10)),
     (RandomSubsetEnsemble, random_subset_ensemble(name="Ran-Pr-15", nr_clusters_ensemble=15)),

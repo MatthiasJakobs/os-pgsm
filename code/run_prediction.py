@@ -117,7 +117,11 @@ def run_comparison(models, model_names, X_val, X_test, ds_name, ds_index, dry_ru
 
         compositor = comp_class(models, exp_config) 
         if isinstance(compositor, NegCorLearning):
-            compositor.models = torch.load(f"models/{ds_name}/{ds_index}_ncl.pth")
+            used_models = []
+            for m in torch.load(f"models/{ds_name}/{ds_index}_ncl.pth"):
+                m.use_device = 'cpu'
+                used_models.append(m)
+            compositor.models = used_models
             compositor.eval()
         if isinstance(compositor, SimpleLSTMBaseline):
             lstm_config = single_models_with_lstm["simplelstm"]
@@ -163,7 +167,7 @@ def main(dry_run, override):
     for ds_name, ds_index in implemented_datasets:
         #remove_compositors(ds_name, ds_index, ["OEP-ROC-Euc", "OEP-ROC-5-topm", "OEP-ROC-10-topm", "OEP-ROC-15-topm", "OEP-ROC-20-topm", "OEP-ROC-15", "OEP-ROC-5", "OEP-ROC-10", "OEP-ROC-20", "OEP-ROC-I", "OEP-ROC-II", "OEP-ROC-ST", "OEP-ROC-Per", "OEP-ROC-C"])
         X = torch.from_numpy(load_dataset(ds_name, ds_index)).float()
-        models, model_names = load_models(ds_name, ds_index, return_names=True)
+        models, model_names = load_models(ds_name, ds_index, return_names=True, device='cpu')
 
         [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=5, val_input_width=25, use_torch=True)
         run_comparison(models, list(model_names), X_val, X_test, ds_name, ds_index, dry_run=dry_run, override=override)
