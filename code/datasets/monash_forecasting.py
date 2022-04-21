@@ -133,7 +133,7 @@ def convert_tsf_to_dataframe(full_file_path_and_name, replace_missing_vals_with 
 
         return loaded_data, frequency, forecast_horizon, contain_missing_values, contain_equal_length
 
-def extract_subseries(df, amount=12, length=500, random_state=0):
+def extract_subseries(df, amount=20, length=500, random_state=0):
     extracted_timeseries = np.zeros((amount, length))
     n_rows = len(df)
 
