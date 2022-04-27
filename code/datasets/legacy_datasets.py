@@ -98,21 +98,6 @@ class CloudCoverage(BaseDataset):
         x = x.fillna(method="ffill")
         return x.to_numpy()
 
-ds_list = [
-    "AbnormalHeartbeat",
-    "CatsDogs",
-    "CinCECGtorso",
-    "Cricket",
-    "EOGHorizontalSignal",
-    "EthanolConcentration",
-    "Mallat",
-    "MixedShapes",
-    "Phoneme",
-    "PigAirwayPressure",
-    "Rock",
-    "SharePriceIncrease",
-]
-
 class UCR_To_Forecasting(UCR_UEA_Dataset):
 
     # Take first datapoint from supplied dataset and return that as time-series
@@ -257,8 +242,34 @@ class SharePriceIncrease(UCR_To_Forecasting):
         self.X = np.squeeze(np.array(data.iloc[0]["relationalAtt"][0].tolist()))
         return None, None
 
-all_legacy_datasets = [CloudCoverage, BikeRegistered, BikeTemperature, BikeRents, SNP500, NYSE, DJI, RUSSELL, NASDAQ, AbnormalHeartbeat, CatsDogs, Cricket, EOGHorizontalSignal, EthanolConcentration, Mallat, Phoneme, PigAirwayPressure, Rock]
-all_legacy_names = ["CloudCoverage", "BikeRegistered", "BikeTemperature", "BikeRents", "SNP500", "NYSE", "DJI", "RUSSELL", "NASDAQ", "AbnormalHeartbeat", "CatsDogs", "Cricket", "EOGHorizontalSignal", "EthanolConcentration", "Mallat", "Phoneme", "PigAirwayPressure", "Rock"]
+all_legacy_datasets = [
+    BikeRegistered, 
+    SNP500, 
+    NYSE, 
+    DJI, 
+    RUSSELL, 
+    AbnormalHeartbeat, 
+    CatsDogs, 
+    Cricket, 
+    EOGHorizontalSignal, 
+    EthanolConcentration, 
+    Phoneme, 
+    Rock
+]
+all_legacy_names = [
+    "BikeRegistered", 
+    "SNP500", 
+    "NYSE", 
+    "DJI", 
+    "RUSSELL", 
+    "AbnormalHeartbeat", 
+    "CatsDogs", 
+    "Cricket", 
+    "EOGHorizontalSignal", 
+    "EthanolConcentration", 
+    "Phoneme", 
+    "Rock"
+]
 
 def load_dataset(name, idx):
     ds_idx = None
