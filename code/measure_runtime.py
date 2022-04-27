@@ -6,7 +6,7 @@ import numpy as np
 from datasets.dataloading import load_dataset
 from datasets.utils import windowing
 from experiments import load_models, min_distance_drifts
-from compositors import OS_PGSM
+from compositors import OS_PGSM, OS_PGSM_Faster
 from os.path import exists
 from warnings import simplefilter
 
@@ -20,9 +20,9 @@ used_datasets = [
 ]
 
 used_experiments = [
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-15")),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-ST", skip_drift_detection=True)),
-    (OS_PGSM, min_distance_drifts(name="OEP-ROC-Per", concept_drift_detection="periodic")),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-15")),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-ST", skip_drift_detection=True)),
+    (OS_PGSM_Faster, min_distance_drifts(name="OEP-ROC-Per", concept_drift_detection="periodic")),
 ]
 
 def measure_runtime():
@@ -30,6 +30,7 @@ def measure_runtime():
     for ds_name, ds_index in used_datasets:
         X = torch.from_numpy(load_dataset(ds_name, ds_index)).float()
         models, _ = load_models(ds_name, ds_index, return_names=True)
+        models = [model.to('cpu') for model in models]
 
         [_, _], [_, _], _, X_val, X_test = windowing(X, train_input_width=5, val_input_width=25, use_torch=True)
 
