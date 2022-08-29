@@ -16,7 +16,7 @@ from single_models import Simple_LSTM
 
 class OS_PGSM:
 
-    def __init__(self, models, config, random_state=0):
+    def __init__(self, models, config, random_state=0, device='cpu'):
         self.models = models
         self.config = config
         self.lag = config.get("k", 5)
@@ -268,13 +268,14 @@ class OS_PGSM:
             else:
                 self.rocs[i] = []
 
-    def recluster_and_reselect(self, x):
+    def recluster_and_reselect(self, x, iteration):
         # Find closest time series in each models RoC to x
         models, rocs = self.find_closest_rocs(x, self.rocs)
 
         # Cluster all RoCs into nr_clusters_ensemble clusters
         if not self.skip_clustering:
             models, rocs = self.cluster_rocs(models, rocs, self.nr_clusters_ensemble)
+            self.clustered_rocs.append((iteration, models, rocs))
 
         # Calculate upper and lower bound of delta (radius of circle)
         numpy_regions = [r.numpy() for r in rocs]
@@ -284,12 +285,15 @@ class OS_PGSM:
 
         # Select topm models according to upper bound
         if not self.skip_topm:
-            return self.select_topm(models, rocs, x, upper_bound)
+            selected_models, selected_rocs = self.select_topm(models, rocs, x, upper_bound)
+            self.topm_selection.append((iteration, selected_models, selected_rocs))
+            return selected_models, selected_rocs
 
         if self.nr_select is not None:
             selected_indices = np.argsort([euclidean(x, r) for r in rocs])[:self.nr_select]
             selected_models = np.array(models)[selected_indices]
             selected_rocs = [rocs[idx] for idx in selected_indices]
+            self.topm_selection.append((iteration, selected_models, selected_rocs))
             return selected_models, selected_rocs
         return models, rocs 
 
@@ -313,6 +317,9 @@ class OS_PGSM:
 
         self.random_selection = []
         self.topm_empty = []
+
+        self.clustered_rocs = []
+        self.topm_selection = []
         
         predictions = []
         mean_residuals = []
@@ -334,7 +341,7 @@ class OS_PGSM:
         # First iteration 
         x = X_test[:self.lag]
         x_unsqueezed = x.unsqueeze(0).unsqueeze(0)
-        topm, topm_rocs = self.recluster_and_reselect(x)
+        topm, topm_rocs = self.recluster_and_reselect(x, 5)
 
         # Compute min distance to x from the all models
         _, closest_rocs = self.find_closest_rocs(x, self.rocs)
@@ -386,7 +393,7 @@ class OS_PGSM:
                 self.roc_rejection_sampling()
 
             if drift_type_one or drift_type_two:
-                topm, topm_rocs = self.recluster_and_reselect(x)
+                topm, topm_rocs = self.recluster_and_reselect(x, target_idx)
                 if drift_type_two:
                     self.drifts_type_2_detected.append(target_idx)
                     _, closest_rocs = self.find_closest_rocs(x, self.rocs)
@@ -400,7 +407,7 @@ class OS_PGSM:
         return np.concatenate([X_test[:self.lag].numpy(), np.array(predictions)])
 
     # TODO: No runtime reports
-    def run(self, X_val, X_test, reuse_prediction=False):
+    def run(self, X_val, X_test, measure_runtime=False, reuse_prediction=False):
         with fixedseed(torch, seed=self.random_state):
             self.rebuild_rocs(X_val)
             self.shrink_rocs()        
@@ -410,16 +417,20 @@ class OS_PGSM:
             self.distance_ambiguities = []
             self.drifts_detected = []
 
+            before = time.time()
             if self.concept_drift_detection is None:
-                return self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
-
-            if self.drift_type == "ospgsm":
-                forecast = self.adaptive_online_roc_rebuild(X_val, X_test)
-            elif self.drift_type == "min_distance_change":
-                forecast = self.adaptive_monitor_min_distance(X_val, X_test)
+                forecast = self.forecast_on_test(X_test, reuse_prediction=reuse_prediction)
             else:
-                raise NotImplementedError(f"Drift type {self.drift_type} not implemented")
+                if self.drift_type == "ospgsm":
+                    forecast = self.adaptive_online_roc_rebuild(X_val, X_test)
+                elif self.drift_type == "min_distance_change":
+                    forecast = self.adaptive_monitor_min_distance(X_val, X_test)
+                else:
+                    raise NotImplementedError(f"Drift type {self.drift_type} not implemented")
+            after = time.time()
 
+            if measure_runtime:
+                return forecast, after-before
             return forecast
 
     def cluster_rocs(self, best_models, clostest_rocs, nr_desired_clusters, metric="dtw"):
@@ -619,6 +630,40 @@ class OS_PGSM:
 
         return top_models
 
+class OS_PGSM_Faster(OS_PGSM):
+
+    def evaluate_on_validation(self, x_val, y_val):
+        losses = np.zeros((len(self.models)))
+
+        if self.roc_mean:
+            all_cams = np.zeros((len(self.models), self.n_omega))
+        else:
+            all_cams = []
+
+        X, y = self.small_split(x_val)
+        for n_m, m in enumerate(self.models):
+            res = m(X.unsqueeze(1), return_intermediate=True)
+            _losses = mse(res['logits'], y)
+            grads = torch.autograd.grad(outputs=_losses, inputs=res['feats'], grad_outputs=torch.ones_like(_losses), create_graph=True)[0].detach()
+            feats = res['feats'].detach()
+
+            # GradCAM
+            w = torch.mean(grads, axis=-1)
+            cams = (w.unsqueeze(-1) * feats).sum(axis=1)
+            cams = torch.nn.functional.relu(cams).squeeze().numpy()
+
+            losses[n_m] = torch.sum(_losses)
+
+            if self.roc_mean:
+                all_cams[n_m] = roc_mean(roc_matrix(cams, z=1))
+            else:
+                all_cams.append(cams)
+
+        if not self.roc_mean:
+            all_cams = np.array(all_cams)
+
+        return losses, all_cams
+
 
 # Baselines for comparison
 
@@ -636,7 +681,7 @@ class SimpleLSTMBaseline(OS_PGSM):
 
 class RandomSubsetEnsemble(OS_PGSM):
 
-    def __init__(self, models, config, random_state=0):
+    def __init__(self, models, config, random_state=0, device='cpu'):
         self.models = models
         self.config = config
         self.rng = np.random.RandomState(random_state)

@@ -133,15 +133,17 @@ def convert_tsf_to_dataframe(full_file_path_and_name, replace_missing_vals_with 
 
         return loaded_data, frequency, forecast_horizon, contain_missing_values, contain_equal_length
 
-def extract_subseries(df, amount=5, length=500, random_state=0):
+def extract_subseries(df, amount=15, length=500, random_state=0):
     extracted_timeseries = np.zeros((amount, length))
     n_rows = len(df)
 
     rng = np.random.RandomState(random_state)
-    row_subset = rng.choice(np.arange(n_rows), size=amount, replace=False)
-    print(row_subset)
+    row_subset = rng.choice(np.arange(n_rows), size=n_rows, replace=False)
+    used_series = 0
     for idx, row in enumerate(row_subset):
         subseries = df.iloc[row]['series_value'].to_numpy().squeeze()
+        if len(subseries) < length:
+            continue
         i = 1
         while np.mean(subseries) == subseries[0]:
             subseries = df.iloc[row+i]['series_value'].to_numpy().squeeze()
@@ -153,8 +155,14 @@ def extract_subseries(df, amount=5, length=500, random_state=0):
         series = subseries[start_idx:(start_idx+length)]
         scaler = StandardScaler()
         series = scaler.fit_transform(series.reshape(-1, 1))
-        extracted_timeseries[idx] = series.squeeze()
+        extracted_timeseries[used_series] = series.squeeze()
 
+        used_series += 1
+
+        if used_series >= amount:
+            break
+
+    print(extracted_timeseries[:, :5])
     return extracted_timeseries
 
 def calculate_dataset_seed(ds_name):
