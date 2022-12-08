@@ -83,6 +83,8 @@ def _apply_window(x, input_width, offset=0, label_width=1, use_torch=True):
 
 def _val_split(X_val, lag, big_lag, use_torch=True):
     x_val = []
+    if isinstance(X_val, np.ndarray):
+        X_val = torch.from_numpy(X_val)
 
     for i in range(0, len(X_val), big_lag):
         x_val.append(X_val[i:(i+big_lag)].unsqueeze(0))

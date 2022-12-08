@@ -246,7 +246,7 @@ def min_distance_drifts(name="min_distance-k=10", nr_select=None, n_omega=60, to
             skip_clustering=skip_clustering,
     )
 
-def ospgsm_original(name="ospgsm", n_omega=60):
+def ospgsm_original(name="ospgsm", n_omega=25):
     return dict(
             name=name,
             k=5, 
@@ -256,16 +256,17 @@ def ospgsm_original(name="ospgsm", n_omega=60):
             roc_mean = False,
             delta=0.95,
             topm=1,
+            distance_measure='dtw',
             invert_relu=False,
-            roc_take_only_best=False,
-            smoothing_threshold=0.1,
+            roc_take_only_best=True,
+            smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="hoeffding",
             drift_type="ospgsm"
     )
 
-def ospgsm_per_original(name="ospgsm-per", n_omega=60):
+def ospgsm_per_original(name="ospgsm-per", n_omega=25):
     return dict(
             name=name,
             k=5, 
@@ -276,15 +277,16 @@ def ospgsm_per_original(name="ospgsm-per", n_omega=60):
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=False,
-            smoothing_threshold=0.1,
+            distance_measure='dtw',
+            roc_take_only_best=True,
+            smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection="periodic",
             drift_type="ospgsm",
     )
 
-def ospgsm_st_original(name="ospgsm-st", n_omega=60):
+def ospgsm_st_original(name="ospgsm-st", n_omega=25):
     return dict(
             name=name,
             k=5, 
@@ -295,15 +297,16 @@ def ospgsm_st_original(name="ospgsm-st", n_omega=60):
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=False,
-            smoothing_threshold=0.1,
+            distance_measure='dtw',
+            roc_take_only_best=True,
+            smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1,
             concept_drift_detection=None,
             drift_type="ospgsm",
     )
 
-def ospgsm_int_original(name="ospgsm-int", n_omega=60):
+def ospgsm_int_original(name="ospgsm-int", n_omega=25):
     return dict(
             name=name,
             k=5, 
@@ -315,8 +318,9 @@ def ospgsm_int_original(name="ospgsm-int", n_omega=60):
             delta=0.95,
             topm=1,
             invert_relu=False,
-            roc_take_only_best=False,
-            smoothing_threshold=0.1,
+            distance_measure='dtw',
+            roc_take_only_best=True,
+            smoothing_threshold=0.5,
             nr_clusters_single=1,
             nr_clusters_ensemble=1, 
             concept_drift_detection=None,
