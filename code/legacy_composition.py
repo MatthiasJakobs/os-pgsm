@@ -20,7 +20,7 @@ def sliding_split(x, lag, use_torch=False):
         y[i] = x[(i+lag)]
 
     if use_torch:
-        return torch.from_numpy(X).float(), torch.from_numpy(y)
+        return torch.from_numpy(X).float(), torch.from_numpy(y).float()
 
     return X, y
 
@@ -38,7 +38,7 @@ def equal_split(x, lag, use_torch=False):
     if not use_torch:
         return X.numpy(), y.numpy()
     else:
-        return X, y
+        return X.float(), y.float()
 
 class BaseCompositor:
 
@@ -147,7 +147,6 @@ class OS_PGSM_St(BaseCompositor):
                 #l = smape(logits, y[idx])
                 l = torch.nn.MSELoss()(logits, y[idx])
                 r = gradcam(l, feats)
-                print(r)
                 cams.append(np.expand_dims(r, 0))
                 losses[n_m] += l.detach().item()
 
